@@ -48,6 +48,18 @@ export class Coin extends Phaser.Physics.Arcade.Sprite {
     this.isMagnetized = false;
   }
 
+  forceMagnetize() {
+    if (!this.active) {
+      return;
+    }
+    this.ageMs = Math.max(this.ageMs, BALANCE.GOLD.MAGNET_DELAY_MS);
+    if (!this.isMagnetized) {
+      this.isMagnetized = true;
+      this.body.setAllowGravity(false);
+      this.setDragX(0);
+    }
+  }
+
   updateCoin(delta, player) {
     if (!this.active) {
       return false;

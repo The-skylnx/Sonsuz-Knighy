@@ -13,12 +13,16 @@ export class UIScene extends Phaser.Scene {
     this.isDebugEnabled = new URLSearchParams(window.location.search).get('debug') === '1';
     this.lastRenderedWeaponId = null;
     this.lastPassiveRevision = -1;
+    this.lastRoomNumber = -1;
     this.passiveWidgets = [];
 
+    this.bannerTimerMs = 0;
     this.compareOpen = false;
     this.compareElapsedMs = 0;
 
     this.createHpHud();
+    this.createRoomHud();
+    this.createRoomBanner();
     this.createWeaponHud();
     this.createRageBuffHud();
     this.createPassiveRowHud();
@@ -31,6 +35,14 @@ export class UIScene extends Phaser.Scene {
     }
 
     this.bindCompareKeys();
+
+    // Show initial room banner if GameScene already loaded its starting room
+    if (this.gameScene && this.gameScene.roomManager) {
+      this.showRoomBanner(
+        this.gameScene.roomManager.roomNumber,
+        this.gameScene.roomManager.roomType
+      );
+    }
   }
 
   createHpHud() {
@@ -73,6 +85,56 @@ export class UIScene extends Phaser.Scene {
       }
     );
     this.hpText.setOrigin(0.5, 0.5);
+  }
+
+  createRoomHud() {
+    const h = BALANCE.HUD;
+    const cx = BALANCE.GAME.WIDTH / 2;
+    const cy = h.MARGIN_Y + h.HP_BAR_HEIGHT / 2;
+
+    this.roomCounterText = this.add.text(cx, cy, 'Room 1', {
+      fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, sans-serif',
+      fontSize: h.ROOM_FONT_SIZE,
+      fontStyle: 'bold',
+      color: h.TEXT_COLOR,
+      stroke: h.TEXT_STROKE,
+      strokeThickness: h.TEXT_STROKE_WIDTH
+    });
+    this.roomCounterText.setOrigin(0.5, 0.5);
+  }
+
+  createRoomBanner() {
+    const h = BALANCE.HUD;
+    this.bannerText = this.add.text(
+      BALANCE.GAME.WIDTH / 2,
+      h.BANNER_Y,
+      '',
+      {
+        fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, sans-serif',
+        fontSize: h.BANNER_FONT_SIZE,
+        fontStyle: 'bold',
+        color: h.TEXT_COLOR,
+        stroke: h.TEXT_STROKE,
+        strokeThickness: h.BANNER_STROKE_WIDTH
+      }
+    );
+    this.bannerText.setOrigin(0.5);
+    this.bannerText.setVisible(false);
+  }
+
+  showRoomBanner(roomNumber, roomType) {
+    const h = BALANCE.HUD;
+    if (roomType === 'treasure') {
+      this.bannerText.setText('Treasure Room');
+      this.bannerText.setColor(h.TREASURE_BANNER_COLOR);
+    } else {
+      this.bannerText.setText(`Room ${roomNumber}`);
+      this.bannerText.setColor(h.TEXT_COLOR);
+    }
+    this.bannerText.setAlpha(1);
+    this.bannerText.setScale(1);
+    this.bannerText.setVisible(true);
+    this.bannerTimerMs = h.BANNER_DURATION_MS;
   }
 
   createWeaponHud() {
@@ -200,7 +262,6 @@ export class UIScene extends Phaser.Scene {
 
     const order = player.passiveOrder;
 
-    // Ensure enough widget slots exist
     while (this.passiveWidgets.length < order.length) {
       const slotContainer = this.add.container(0, 0);
       const gfx = this.add.graphics();
@@ -651,12 +712,18 @@ export class UIScene extends Phaser.Scene {
       {
         label: d.BTN_GOLD_LABEL,
         onTap: () => this.gameScene && this.gameScene.addDebugGold()
+      },
+      {
+        label: d.BTN_NEXT_LABEL,
+        onTap: () => this.gameScene && this.gameScene.debugClearRoom()
       }
     ];
 
     for (let i = 0; i < actions.length; i++) {
-      const cx = d.X + d.BTN_WIDTH / 2 + i * (d.BTN_WIDTH + d.BTN_GAP);
-      const cy = d.BTN_Y + d.BTN_HEIGHT / 2;
+      const col = i % 2;
+      const row = Math.floor(i / 2);
+      const cx = d.X + d.BTN_WIDTH / 2 + col * (d.BTN_WIDTH + d.BTN_GAP_X);
+      const cy = d.BTN_Y + d.BTN_HEIGHT / 2 + row * (d.BTN_HEIGHT + d.BTN_GAP_Y);
 
       const container = this.add.container(cx, cy);
       const gfx = this.add.graphics();
@@ -719,16 +786,34 @@ export class UIScene extends Phaser.Scene {
       this.compareElapsedMs += delta;
     }
 
+    if (this.bannerTimerMs > 0) {
+      const h = BALANCE.HUD;
+      this.bannerTimerMs = Math.max(0, this.bannerTimerMs - delta);
+      if (this.bannerTimerMs <= 0) {
+        this.bannerText.setVisible(false);
+      } else {
+        const progress = 1 - this.bannerTimerMs / h.BANNER_DURATION_MS;
+        const alpha = progress < 0.7 ? 1 : 1 - (progress - 0.7) / 0.3;
+        this.bannerText.setAlpha(alpha);
+      }
+    }
+
     if (!this.gameScene || !this.gameScene.player) {
       return;
     }
 
     const h = BALANCE.HUD;
     const player = this.gameScene.player;
+    const rm = this.gameScene.roomManager;
     const hpRatio = Phaser.Math.Clamp(player.hp / player.maxHp, 0, 1);
 
     this.hpFill.displayWidth = h.HP_BAR_WIDTH * hpRatio;
     this.hpText.setText(`${player.hp} / ${player.maxHp}`);
+
+    if (rm && rm.roomNumber !== this.lastRoomNumber) {
+      this.lastRoomNumber = rm.roomNumber;
+      this.roomCounterText.setText(`Room ${rm.roomNumber}`);
+    }
 
     this.refreshWeaponHud(player.weapon);
     this.refreshPassiveRowHud(player, this.gameScene.passiveHudRevision);
@@ -746,7 +831,7 @@ export class UIScene extends Phaser.Scene {
       this.updateGoldIconPosition();
     }
 
-    if (this.isDebugEnabled && this.debugText) {
+    if (this.isDebugEnabled && this.debugText && rm) {
       const fps = Math.round(this.game.loop.actualFps);
       const touchCount = this.countActiveTouchPointers();
       const vx = player.body ? Math.round(player.body.velocity.x) : 0;
@@ -756,10 +841,11 @@ export class UIScene extends Phaser.Scene {
       const chests = this.gameScene.activeChests.length;
 
       this.debugText.setText(
-        `FPS: ${fps}\n` +
-        `Touch Pointers: ${touchCount}\n` +
-        `Player Vel: (${vx}, ${vy})\n` +
-        `Enemies: ${enemies} | Coins: ${coins} | Chests: ${chests}`
+        `FPS: ${fps} | Touch: ${touchCount}\n` +
+        `Room: ${rm.roomNumber} (Depth: ${rm.depth}) [${rm.roomType}]\n` +
+        `Vel: (${vx}, ${vy})\n` +
+        `Enemies: ${enemies} (+${rm.enemiesToSpawn} left)\n` +
+        `Coins: ${coins} | Chests: ${chests}`
       );
     }
   }

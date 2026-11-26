@@ -109,6 +109,23 @@ export class Projectile extends Phaser.Physics.Arcade.Sprite {
       return true;
     }
 
+    // Arrows and magic orbs hit room walls and spawn a tiny spark
+    if (this.behavior !== 'boomerang') {
+      const pad = pCfg.WALL_HIT_PAD;
+      if (
+        this.x <= pad ||
+        this.x >= BALANCE.GAME.WIDTH - pad ||
+        this.y <= pad ||
+        this.y >= BALANCE.GAME.HEIGHT - pad
+      ) {
+        this.scene.spawnProjectileImpactSpark(
+          Phaser.Math.Clamp(this.x, pad, BALANCE.GAME.WIDTH - pad),
+          Phaser.Math.Clamp(this.y, pad, BALANCE.GAME.HEIGHT - pad)
+        );
+        return true;
+      }
+    }
+
     // Remove when leaving the room
     const margin = pCfg.ROOM_MARGIN;
     if (

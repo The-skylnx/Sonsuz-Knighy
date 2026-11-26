@@ -45,6 +45,17 @@ export class ObjectPool {
     this.free.push(item);
   }
 
+  releaseAll(deactivateFn = null) {
+    for (let i = this.active.length - 1; i >= 0; i--) {
+      const item = this.active[i];
+      if (deactivateFn) {
+        deactivateFn(item);
+      }
+      this.free.push(item);
+    }
+    this.active.length = 0;
+  }
+
   forEachActive(callback) {
     for (let i = this.active.length - 1; i >= 0; i--) {
       callback(this.active[i]);

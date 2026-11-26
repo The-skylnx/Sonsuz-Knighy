@@ -162,6 +162,31 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.weapon = weaponInstance;
   }
 
+  grantInvulnerability(durationMs) {
+    if (this.isDead || durationMs <= 0) {
+      return;
+    }
+    this.invulnTimer = Math.max(this.invulnTimer, durationMs);
+    this.blinkTimer = 0;
+  }
+
+  resetForRoomEntry(x, y) {
+    if (this.isDead) {
+      return;
+    }
+    this.setPosition(x, y);
+    if (this.body) {
+      this.body.reset(x, y);
+    }
+    this.setVelocity(0, 0);
+    this.coyoteTimer = 0;
+    this.jumpBufferTimer = 0;
+    this.airJumpsRemaining = this.stats.extraAirJumps;
+    this.isJumping = false;
+    this.jumpCutApplied = false;
+    this.setFacing(1);
+  }
+
   setFacing(dir) {
     if (dir < 0) {
       this.facingDir = -1;

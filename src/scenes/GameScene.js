@@ -1,6 +1,7 @@
 import { BALANCE } from '../config/balance.js';
 import { ENEMIES } from '../data/enemies.js';
 import { WEAPONS } from '../data/weapons.js';
+import { validateRoomTemplates } from '../data/roomTemplates.js';
 import { Player } from '../entities/Player.js';
 import { Enemy } from '../entities/Enemy.js';
 import { Chest } from '../entities/Chest.js';
@@ -8,6 +9,7 @@ import { Coin, WeaponPickup, ItemPickup } from '../entities/Pickup.js';
 import { Projectile } from '../entities/Projectile.js';
 import { TouchControls } from '../systems/TouchControls.js';
 import { AutoAttack } from '../systems/AutoAttack.js';
+import { RoomManager } from '../systems/RoomManager.js';
 import { ObjectPool } from '../systems/ObjectPool.js';
 import { AudioManager } from '../systems/AudioManager.js';
 import {
@@ -17,35 +19,53 @@ import {
   rollChestLoot
 } from '../systems/LootSystem.js';
 
+let didValidateTemplatesOnce = false;
+
 export class GameScene extends Phaser.Scene {
   constructor() {
     super('GameScene');
   }
 
+  init(data) {
+    const params = new URLSearchParams(window.location.search);
+    this.isDebugEnabled = params.get('debug') === '1';
+
+    if (data && typeof data.forceStartRoom === 'number') {
+      this.initialRoomNumber = Math.max(1, Math.floor(data.forceStartRoom));
+    } else {
+      const parsedRoom = parseInt(params.get('room'), 10);
+      this.initialRoomNumber =
+        Number.isFinite(parsedRoom) && parsedRoom >= 1 ? parsedRoom : 1;
+    }
+  }
+
   create() {
     this.physics.world.resume();
 
+    if (this.isDebugEnabled && !didValidateTemplatesOnce) {
+      didValidateTemplatesOnce = true;
+      validateRoomTemplates();
+    }
+
     this.gold = 0;
     this.passiveHudRevision = 0;
-    this.killsTowardChest = 0;
     this.isGameOver = false;
     this.isCompareOpen = false;
     this.comparingPickup = null;
-    this.isDebugEnabled =
-      new URLSearchParams(window.location.search).get('debug') === '1';
+
+    this.transitionPhase = 'none'; // 'none' | 'fade_out' | 'fade_in'
+    this.transitionTimerMs = 0;
 
     this.activeEnemies = [];
     this.activeChests = [];
     this.pendingWarnings = [];
-    this.platformBounds = [];
-    this.spawnSurfaces = [];
     this.spawnTimer = BALANCE.SPAWNER.INITIAL_SPAWN_DELAY_MS;
     this.initialSpawnsRemaining = BALANCE.SPAWNER.INITIAL_SPAWN_COUNT;
 
     this.audioManager = new AudioManager();
 
-    this.drawBackgroundGrid();
-    this.createRoomPlatforms();
+    this.bgGridGfx = this.add.graphics();
+    this.platforms = this.physics.add.staticGroup();
 
     this.player = new Player(
       this,
@@ -63,10 +83,26 @@ export class GameScene extends Phaser.Scene {
     this.setupEnemyGroups();
     this.setupPools();
 
+    this.roomManager = new RoomManager(this, this.platforms);
     this.autoAttack = new AutoAttack(this, this.player);
+
+    this.transitionOverlay = this.add.rectangle(
+      BALANCE.GAME.WIDTH / 2,
+      BALANCE.GAME.HEIGHT / 2,
+      BALANCE.GAME.WIDTH,
+      BALANCE.GAME.HEIGHT,
+      0x000000,
+      1
+    );
+    this.transitionOverlay.setScrollFactor(0);
+    this.transitionOverlay.setDepth(BALANCE.CONTROLS.DEPTH - 5);
+    this.transitionOverlay.setAlpha(0);
+    this.transitionOverlay.setVisible(false);
 
     this.setupKeyboard();
     this.touchControls = new TouchControls(this);
+
+    this.enterRoom(this.initialRoomNumber, false);
 
     if (this.scene.isActive('UIScene')) {
       this.scene.stop('UIScene');
@@ -74,72 +110,23 @@ export class GameScene extends Phaser.Scene {
     this.scene.launch('UIScene');
   }
 
-  drawBackgroundGrid() {
+  get currentDepth() {
+    return this.roomManager ? this.roomManager.depth : 0;
+  }
+
+  applyThemePalette(palette) {
     const gCfg = BALANCE.GAME;
-    const gfx = this.add.graphics();
-    gfx.lineStyle(1, gCfg.GRID_COLOR, gCfg.GRID_ALPHA);
+    this.cameras.main.setBackgroundColor(palette.backgroundColor);
+
+    this.bgGridGfx.clear();
+    this.bgGridGfx.lineStyle(1, palette.gridColor, gCfg.GRID_ALPHA);
 
     for (let x = 0; x <= gCfg.WIDTH; x += gCfg.GRID_SIZE) {
-      gfx.lineBetween(x, 0, x, gCfg.HEIGHT);
+      this.bgGridGfx.lineBetween(x, 0, x, gCfg.HEIGHT);
     }
     for (let y = 0; y <= gCfg.HEIGHT; y += gCfg.GRID_SIZE) {
-      gfx.lineBetween(0, y, gCfg.WIDTH, y);
+      this.bgGridGfx.lineBetween(0, y, gCfg.WIDTH, y);
     }
-  }
-
-  createRoomPlatforms() {
-    this.platforms = this.physics.add.staticGroup();
-    const room = BALANCE.TEST_ROOM;
-
-    this.addStaticPlatform(
-      room.GROUND.x,
-      room.GROUND.y,
-      room.GROUND.width,
-      room.GROUND.height,
-      room.GROUND.color,
-      room.GROUND.topColor,
-      room.GROUND.topHeight,
-      true
-    );
-
-    for (const plat of room.PLATFORMS) {
-      this.addStaticPlatform(
-        plat.x,
-        plat.y,
-        plat.width,
-        plat.height,
-        room.PLATFORM_COLOR,
-        room.PLATFORM_TOP_COLOR,
-        room.PLATFORM_TOP_HEIGHT,
-        false
-      );
-    }
-  }
-
-  addStaticPlatform(x, y, width, height, fillColor, topColor, topHeight, isGround) {
-    const rect = this.add.rectangle(x, y, width, height, fillColor);
-    this.platforms.add(rect);
-    rect.body.updateFromGameObject();
-
-    const halfW = width / 2;
-    const halfH = height / 2;
-    const bounds = {
-      left: x - halfW,
-      right: x + halfW,
-      top: y - halfH,
-      bottom: y + halfH,
-      isGround
-    };
-    this.platformBounds.push(bounds);
-    this.spawnSurfaces.push(bounds);
-
-    this.add.rectangle(
-      x,
-      y - halfH + topHeight / 2,
-      width,
-      topHeight,
-      topColor
-    );
   }
 
   setupEnemyGroups() {
@@ -218,6 +205,14 @@ export class GameScene extends Phaser.Scene {
       this.batGroup,
       this.onProjectileOverlapEnemy,
       null,
+      this
+    );
+    // Arrows and magic orbs collide with platforms; boomerangs pass through
+    this.physics.add.collider(
+      this.projectileGroup,
+      this.platforms,
+      this.onProjectileHitPlatform,
+      (proj) => proj.active && proj.behavior !== 'boomerang',
       this
     );
 
@@ -359,16 +354,17 @@ export class GameScene extends Phaser.Scene {
         img.setDepth(cCfg.FX_DEPTH);
         img.setActive(false);
         img.setVisible(false);
-        return { img, elapsed: 0 };
+        return { img, elapsed: 0, maxScale: cCfg.HIT_EFFECT_END_SCALE };
       },
-      (entry, x, y) => {
+      (entry, x, y, scaleMul = 1) => {
         entry.img.setPosition(x, y);
         entry.img.setRotation(Math.random() * Math.PI);
-        entry.img.setScale(cCfg.HIT_EFFECT_START_SCALE);
+        entry.img.setScale(cCfg.HIT_EFFECT_START_SCALE * scaleMul);
         entry.img.setAlpha(1);
         entry.img.setActive(true);
         entry.img.setVisible(true);
         entry.elapsed = 0;
+        entry.maxScale = cCfg.HIT_EFFECT_END_SCALE * scaleMul;
       },
       cCfg.HIT_EFFECT_POOL_INITIAL
     );
@@ -448,7 +444,7 @@ export class GameScene extends Phaser.Scene {
         entry.img.setActive(true);
         entry.img.setVisible(true);
       },
-      2
+      3
     );
 
     // 11. Melee arc swing visuals pool
@@ -487,6 +483,116 @@ export class GameScene extends Phaser.Scene {
     );
   }
 
+  cleanupRoomTransientObjects() {
+    this.coinPool.releaseAll((c) => c.deactivate());
+    this.projectilePool.releaseAll((p) => p.deactivate());
+    this.weaponPickupPool.releaseAll((w) => w.deactivate());
+    this.itemPickupPool.releaseAll((i) => i.deactivate());
+
+    const hideText = (e) => {
+      e.textObj.setActive(false);
+      e.textObj.setVisible(false);
+    };
+    const hideImg = (e) => {
+      e.img.setActive(false);
+      e.img.setVisible(false);
+    };
+
+    this.damageTextPool.releaseAll(hideText);
+    this.statusTextPool.releaseAll(hideText);
+    this.hitEffectPool.releaseAll(hideImg);
+    this.burnEffectPool.releaseAll(hideImg);
+    this.puffPool.releaseAll(hideImg);
+    this.chestFlashPool.releaseAll(hideImg);
+    this.swingPool.releaseAll(hideImg);
+
+    for (let i = 0; i < this.activeChests.length; i++) {
+      this.activeChests[i].destroy();
+    }
+    this.activeChests.length = 0;
+
+    for (let i = 0; i < this.activeEnemies.length; i++) {
+      this.activeEnemies[i].destroy();
+    }
+    this.activeEnemies.length = 0;
+
+    for (let i = 0; i < this.pendingWarnings.length; i++) {
+      this.pendingWarnings[i].sprite.destroy();
+    }
+    this.pendingWarnings.length = 0;
+  }
+
+  enterRoom(roomNumber, grantEntryInvuln = false) {
+    this.cleanupRoomTransientObjects();
+    this.roomManager.buildRoom(roomNumber);
+
+    this.player.resetForRoomEntry(
+      BALANCE.PLAYER.SPAWN_X,
+      BALANCE.PLAYER.SPAWN_Y
+    );
+    if (grantEntryInvuln) {
+      this.player.grantInvulnerability(BALANCE.ROOMS.TRANSITION_INVULN_MS);
+    }
+
+    this.spawnTimer = BALANCE.SPAWNER.INITIAL_SPAWN_DELAY_MS;
+    this.initialSpawnsRemaining = BALANCE.SPAWNER.INITIAL_SPAWN_COUNT;
+
+    const uiScene = this.scene.get('UIScene');
+    if (uiScene && uiScene.scene.isActive()) {
+      uiScene.showRoomBanner(
+        this.roomManager.roomNumber,
+        this.roomManager.roomType
+      );
+    }
+  }
+
+  startNextRoomTransition() {
+    if (this.transitionPhase !== 'none' || this.isGameOver || this.isCompareOpen) {
+      return;
+    }
+
+    this.transitionPhase = 'fade_out';
+    this.transitionTimerMs = 0;
+    this.player.setVelocity(0, 0);
+    this.transitionOverlay.setAlpha(0);
+    this.transitionOverlay.setVisible(true);
+    this.audioManager.playRoomTransition();
+  }
+
+  updateTransition(delta, inputState) {
+    const rCfg = BALANCE.ROOMS;
+    this.transitionTimerMs += delta;
+
+    if (this.transitionPhase === 'fade_out') {
+      const t = Math.min(1, this.transitionTimerMs / rCfg.FADE_OUT_MS);
+      this.transitionOverlay.setAlpha(t);
+      this.player.setVelocity(0, 0);
+
+      if (this.transitionTimerMs >= rCfg.FADE_OUT_MS) {
+        this.enterRoom(this.roomManager.roomNumber + 1, true);
+        this.transitionPhase = 'fade_in';
+        this.transitionTimerMs = 0;
+        this.transitionOverlay.setAlpha(1);
+      }
+      return;
+    }
+
+    if (this.transitionPhase === 'fade_in') {
+      const t = Math.min(1, this.transitionTimerMs / rCfg.FADE_IN_MS);
+      this.transitionOverlay.setAlpha(1 - t);
+
+      // Keep player controls responsive during fade-in while spawner stays paused
+      this.player.update(delta, inputState);
+
+      if (this.transitionTimerMs >= rCfg.FADE_IN_MS) {
+        this.transitionPhase = 'none';
+        this.transitionTimerMs = 0;
+        this.transitionOverlay.setAlpha(0);
+        this.transitionOverlay.setVisible(false);
+      }
+    }
+  }
+
   setupKeyboard() {
     const kb = this.input.keyboard;
     if (!kb) {
@@ -505,7 +611,8 @@ export class GameScene extends Phaser.Scene {
       space: Phaser.Input.Keyboard.KeyCodes.SPACE,
       g: Phaser.Input.Keyboard.KeyCodes.G,
       c: Phaser.Input.Keyboard.KeyCodes.C,
-      v: Phaser.Input.Keyboard.KeyCodes.V
+      v: Phaser.Input.Keyboard.KeyCodes.V,
+      n: Phaser.Input.Keyboard.KeyCodes.N
     });
   }
 
@@ -515,6 +622,10 @@ export class GameScene extends Phaser.Scene {
 
   spawnProjectile(x, y, aimAngle, weaponInstance) {
     this.projectilePool.acquire(x, y, aimAngle, weaponInstance);
+  }
+
+  spawnProjectileImpactSpark(x, y) {
+    this.hitEffectPool.acquire(x, y, 0.65);
   }
 
   spawnBurnEffect(x, y) {
@@ -551,54 +662,34 @@ export class GameScene extends Phaser.Scene {
     this.weaponPickupPool.acquire(x, y, weaponInstance, cooldownMs, popVx, popVy);
   }
 
-  spawnRandomPlatformChest() {
-    const cCfg = BALANCE.CHESTS;
-    if (this.activeChests.length >= cCfg.MAX_ACTIVE) {
+  magnetizeAllActiveCoins() {
+    this.coinPool.forEachActive((coin) => {
+      coin.forceMagnetize();
+    });
+  }
+
+  debugClearRoom() {
+    if (
+      this.isGameOver ||
+      this.isCompareOpen ||
+      this.transitionPhase !== 'none' ||
+      !this.roomManager
+    ) {
       return;
     }
 
-    // Prefer the 4 elevated platforms, with ground fallback
-    const elevated = this.spawnSurfaces.filter((s) => !s.isGround);
-    const pool = elevated.length > 0 ? elevated : this.spawnSurfaces;
-    const minSpacingSq = cCfg.MIN_CHEST_SPACING * cCfg.MIN_CHEST_SPACING;
-
-    let chosenX = BALANCE.GAME.WIDTH / 2;
-    let chosenY = BALANCE.TEST_ROOM.GROUND.y - BALANCE.TEST_ROOM.GROUND.height / 2 - cCfg.HEIGHT / 2;
-
-    for (let attempt = 0; attempt < cCfg.MAX_PLACE_ATTEMPTS; attempt++) {
-      const surface = pool[Phaser.Math.Between(0, pool.length - 1)];
-      const minX = Math.max(cCfg.GROUND_SAFE_X, surface.left + cCfg.EDGE_MARGIN);
-      const maxX = Math.min(
-        BALANCE.GAME.WIDTH - cCfg.GROUND_SAFE_X,
-        surface.right - cCfg.EDGE_MARGIN
-      );
-      if (maxX < minX) {
-        continue;
-      }
-
-      const x = Phaser.Math.Between(Math.round(minX), Math.round(maxX));
-      const y = surface.top - cCfg.HEIGHT / 2;
-      chosenX = x;
-      chosenY = y;
-
-      let tooClose = false;
-      for (let i = 0; i < this.activeChests.length; i++) {
-        const other = this.activeChests[i];
-        const dx = other.x - x;
-        const dy = other.y - y;
-        if (dx * dx + dy * dy < minSpacingSq) {
-          tooClose = true;
-          break;
-        }
-      }
-      if (!tooClose) {
-        break;
-      }
+    for (let i = 0; i < this.pendingWarnings.length; i++) {
+      this.pendingWarnings[i].sprite.destroy();
     }
+    this.pendingWarnings.length = 0;
 
-    const tierId = rollChestTier();
-    const chest = new Chest(this, chosenX, chosenY, tierId, 0);
-    this.activeChests.push(chest);
+    for (let i = 0; i < this.activeEnemies.length; i++) {
+      this.activeEnemies[i].destroy();
+    }
+    this.activeEnemies.length = 0;
+
+    this.magnetizeAllActiveCoins();
+    this.roomManager.openExitDoorImmediately();
   }
 
   spawnDebugChestNearPlayer() {
@@ -607,8 +698,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     const cCfg = BALANCE.CHESTS;
-    // Keep max 2 chests at once by replacing oldest closed chest if already full
-    if (this.activeChests.length >= cCfg.MAX_ACTIVE) {
+    if (this.activeChests.length >= cCfg.DEBUG_MAX_ACTIVE) {
       const closedIdx = this.activeChests.findIndex((c) => c.state === 'closed');
       if (closedIdx !== -1) {
         this.activeChests[closedIdx].destroy();
@@ -629,11 +719,11 @@ export class GameScene extends Phaser.Scene {
       BALANCE.GAME.WIDTH - cCfg.DEBUG_CLAMP_X
     );
 
-    // Place chest flush on the highest surface below player's waist at targetX
-    let bestSurface = this.spawnSurfaces[0];
+    const surfaces = this.roomManager.spawnSurfaces;
+    let bestSurface = surfaces[0];
     let bestTop = Infinity;
-    for (let i = 0; i < this.spawnSurfaces.length; i++) {
-      const s = this.spawnSurfaces[i];
+    for (let i = 0; i < surfaces.length; i++) {
+      const s = surfaces[i];
       if (
         targetX >= s.left + 20 &&
         targetX <= s.right - 20 &&
@@ -647,7 +737,7 @@ export class GameScene extends Phaser.Scene {
 
     const chestY = bestSurface.top - cCfg.HEIGHT / 2;
     const tierId = rollChestTier();
-    const chest = new Chest(this, targetX, chestY, tierId, 0);
+    const chest = new Chest(this, targetX, chestY, tierId, this.currentDepth);
     this.activeChests.push(chest);
   }
 
@@ -670,7 +760,7 @@ export class GameScene extends Phaser.Scene {
   onChestBurstOpen(chest) {
     const cCfg = BALANCE.CHESTS;
     const wCfg = BALANCE.WEAPONS_DROP;
-    const loot = rollChestLoot(chest.tierId, 0);
+    const loot = rollChestLoot(chest.tierId, this.currentDepth);
 
     let burstColor = chest.tierCfg.latchColor;
     if (loot.category === 'weapon') {
@@ -681,7 +771,6 @@ export class GameScene extends Phaser.Scene {
       burstColor = loot.consumable.color;
     }
 
-    // Light flash + burst particles
     this.chestFlashPool.acquire(chest.x, chest.y - 4, burstColor);
     for (let i = 0; i < cCfg.BURST_PARTICLE_COUNT; i++) {
       const angle = (Math.PI * 2 * i) / cCfg.BURST_PARTICLE_COUNT + Math.random() * 0.35;
@@ -698,7 +787,6 @@ export class GameScene extends Phaser.Scene {
       );
     }
 
-    // Pop loot item out
     if (loot.category === 'weapon') {
       const popVx = Phaser.Math.Between(
         -wCfg.CHEST_POP_VX_SPREAD,
@@ -775,14 +863,32 @@ export class GameScene extends Phaser.Scene {
     }
     targetX = Phaser.Math.Clamp(targetX, wCfg.DEBUG_DROP_MIN_X, wCfg.DEBUG_DROP_MAX_X);
 
-    const weapon = createRandomWeaponDrop(0);
+    const weapon = createRandomWeaponDrop(this.currentDepth);
     this.spawnWeaponPickup(targetX, this.player.y - 12, weapon, wCfg.PICKUP_COOLDOWN_MS);
+  }
+
+  onProjectileHitPlatform(objA, objB) {
+    const proj = objA instanceof Projectile ? objA : objB;
+    if (!proj || !proj.active || proj.behavior === 'boomerang' || proj.hasStopped) {
+      return;
+    }
+    this.spawnProjectileImpactSpark(proj.x, proj.y);
+    proj.hasStopped = true;
+    proj.setVisible(false);
+    if (proj.body) {
+      proj.body.stop();
+    }
   }
 
   onProjectileOverlapEnemy(objA, objB) {
     const proj = objA instanceof Projectile ? objA : objB;
     const enemy = proj === objA ? objB : objA;
-    if (this.isGameOver || this.isCompareOpen || !proj.canHitEnemy(enemy)) {
+    if (
+      this.isGameOver ||
+      this.isCompareOpen ||
+      this.transitionPhase !== 'none' ||
+      !proj.canHitEnemy(enemy)
+    ) {
       return;
     }
 
@@ -898,7 +1004,7 @@ export class GameScene extends Phaser.Scene {
     this.dropCoinsForEnemy(enemy);
 
     if (Math.random() < BALANCE.WEAPONS_DROP.ENEMY_DROP_CHANCE) {
-      const droppedWeapon = createRandomWeaponDrop(0);
+      const droppedWeapon = createRandomWeaponDrop(this.currentDepth);
       this.spawnWeaponPickup(
         enemy.x,
         enemy.y,
@@ -907,7 +1013,6 @@ export class GameScene extends Phaser.Scene {
       );
     }
 
-    // Vampire Fang passive heal check
     const healed = this.player.onEnemyKilled();
     if (healed > 0) {
       this.damageTextPool.acquire(
@@ -918,19 +1023,13 @@ export class GameScene extends Phaser.Scene {
       );
     }
 
-    // Spawn a chest every 8 kills (up to 2 active chests at once)
-    this.killsTowardChest += 1;
-    if (this.killsTowardChest >= BALANCE.CHESTS.KILLS_PER_SPAWN) {
-      this.killsTowardChest = 0;
-      this.spawnRandomPlatformChest();
-    }
-
     this.removeEnemy(enemy);
   }
 
   dropCoinsForEnemy(enemy) {
     const baseCount = Phaser.Math.Between(enemy.cfg.goldMin, enemy.cfg.goldMax);
-    const exact = baseCount * this.player.stats.goldMultiplier;
+    const depthGoldMul = 1 + BALANCE.DEPTH_SCALING.ENEMY_GOLD_FACTOR * this.currentDepth;
+    const exact = baseCount * depthGoldMul * this.player.stats.goldMultiplier;
     const count = Math.floor(exact) + (Math.random() < exact % 1 ? 1 : 0);
 
     for (let i = 0; i < count; i++) {
@@ -947,7 +1046,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   openWeaponCompare(pickup) {
-    if (this.isCompareOpen || this.isGameOver || !pickup || !pickup.active) {
+    if (
+      this.isCompareOpen ||
+      this.isGameOver ||
+      this.transitionPhase !== 'none' ||
+      !pickup ||
+      !pickup.active
+    ) {
       return;
     }
 
@@ -1007,7 +1112,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   onPlayerTouchEnemy(_player, enemy) {
-    if (this.isGameOver || this.isCompareOpen || !enemy.active || enemy.isDead) {
+    if (
+      this.isGameOver ||
+      this.isCompareOpen ||
+      this.transitionPhase !== 'none' ||
+      !enemy.active ||
+      enemy.isDead
+    ) {
       return;
     }
 
@@ -1016,7 +1127,6 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    // Thorn Armor reflects contact damage to the enemy that touched the player
     if (this.player.stats.thornDamage > 0) {
       this.applyThornDamage(enemy, this.player.stats.thornDamage);
     }
@@ -1033,6 +1143,8 @@ export class GameScene extends Phaser.Scene {
     this.isGameOver = true;
     this.isCompareOpen = false;
     this.comparingPickup = null;
+    this.transitionPhase = 'none';
+    this.transitionOverlay.setVisible(false);
     this.physics.world.resume();
     this.touchControls.resetPointers();
 
@@ -1052,12 +1164,16 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    this.scene.launch('GameOverScene');
+    this.scene.launch('GameOverScene', {
+      roomReached: this.roomManager ? this.roomManager.roomNumber : 1
+    });
   }
 
   updateEnemySpawner(delta) {
     const s = BALANCE.SPAWNER;
+    const rm = this.roomManager;
 
+    // Update active 0.5s warning markers
     for (let i = this.pendingWarnings.length - 1; i >= 0; i--) {
       const warning = this.pendingWarnings[i];
       warning.elapsed += delta;
@@ -1078,8 +1194,12 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    const totalCount = this.activeEnemies.length + this.pendingWarnings.length;
-    if (totalCount >= s.MAX_ALIVE) {
+    if (rm.roomType !== 'combat' || rm.enemiesToSpawn <= 0) {
+      return;
+    }
+
+    const totalActive = this.activeEnemies.length + this.pendingWarnings.length;
+    if (totalActive >= rm.maxAliveEnemies) {
       return;
     }
 
@@ -1088,16 +1208,18 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    const availableSlots = Math.min(
+      rm.enemiesToSpawn,
+      rm.maxAliveEnemies - totalActive
+    );
+
     if (this.initialSpawnsRemaining > 0) {
-      const toQueue = Math.min(
-        this.initialSpawnsRemaining,
-        s.MAX_ALIVE - totalCount
-      );
+      const toQueue = Math.min(this.initialSpawnsRemaining, availableSlots);
       for (let i = 0; i < toQueue; i++) {
         this.queueEnemySpawn();
       }
       this.initialSpawnsRemaining = 0;
-    } else {
+    } else if (availableSlots > 0) {
       this.queueEnemySpawn();
     }
 
@@ -1105,6 +1227,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   queueEnemySpawn() {
+    if (this.roomManager.enemiesToSpawn <= 0) {
+      return;
+    }
+    this.roomManager.enemiesToSpawn -= 1;
+
     const s = BALANCE.SPAWNER;
     const typeKey = Math.random() < s.SLIME_CHANCE ? 'slime' : 'bat';
     const pos = this.pickSafeSpawnPosition(typeKey);
@@ -1123,6 +1250,7 @@ export class GameScene extends Phaser.Scene {
 
   pickSafeSpawnPosition(typeKey) {
     const s = BALANCE.SPAWNER;
+    const surfaces = this.roomManager.spawnSurfaces;
     const minDistSq = s.MIN_PLAYER_DISTANCE * s.MIN_PLAYER_DISTANCE;
     let chosen = { x: s.FALLBACK_SPAWN_X, y: s.FALLBACK_SPAWN_Y };
 
@@ -1131,10 +1259,16 @@ export class GameScene extends Phaser.Scene {
       let y;
 
       if (typeKey === 'slime') {
-        const surface =
-          this.spawnSurfaces[Phaser.Math.Between(0, this.spawnSurfaces.length - 1)];
-        const minX = surface.left + s.PLATFORM_EDGE_MARGIN;
-        const maxX = surface.right - s.PLATFORM_EDGE_MARGIN;
+        const surface = surfaces[Phaser.Math.Between(0, surfaces.length - 1)];
+        const minX = surface.isGround
+          ? s.GROUND_MIN_SPAWN_X
+          : surface.left + s.PLATFORM_EDGE_MARGIN;
+        const maxX = surface.isGround
+          ? s.GROUND_MAX_SPAWN_X
+          : surface.right - s.PLATFORM_EDGE_MARGIN;
+        if (maxX <= minX) {
+          continue;
+        }
         x = Phaser.Math.Between(Math.round(minX), Math.round(maxX));
         y = surface.top - ENEMIES.slime.height / 2;
       } else {
@@ -1158,7 +1292,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    const enemy = new Enemy(this, x, y, typeKey);
+    const enemy = new Enemy(this, x, y, typeKey, this.currentDepth);
     if (typeKey === 'slime') {
       this.slimeGroup.add(enemy);
       enemy.body.setAllowGravity(true);
@@ -1189,7 +1323,6 @@ export class GameScene extends Phaser.Scene {
     const sTxtCfg = BALANCE.STATUS_TEXT;
     const chCfg = BALANCE.CHESTS;
 
-    // Coins
     this.coinPool.forEachActive((coin) => {
       const pickedUp = coin.updateCoin(delta, this.player);
       if (pickedUp) {
@@ -1200,7 +1333,6 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    // Projectiles
     this.projectilePool.forEachActive((proj) => {
       const shouldRelease = proj.updateProjectile(
         delta,
@@ -1213,7 +1345,6 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    // Passive & consumable pickups
     if (!this.isGameOver && !this.isCompareOpen) {
       this.itemPickupPool.forEachActive((item) => {
         const collected = item.updateItem(delta, this.player);
@@ -1225,7 +1356,6 @@ export class GameScene extends Phaser.Scene {
       });
     }
 
-    // Ground weapon pickups
     if (!this.isGameOver && !this.isCompareOpen) {
       let triggeredPickup = null;
       this.weaponPickupPool.forEachActive((pickup) => {
@@ -1239,7 +1369,6 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // Floating damage/heal numbers
     this.damageTextPool.forEachActive((entry) => {
       entry.elapsed += delta;
       const t = entry.elapsed / cCfg.DMG_TEXT_DURATION_MS;
@@ -1253,7 +1382,6 @@ export class GameScene extends Phaser.Scene {
       entry.textObj.setAlpha(1 - t * t);
     });
 
-    // Floating pickup status banners
     this.statusTextPool.forEachActive((entry) => {
       entry.elapsed += delta;
       const t = entry.elapsed / sTxtCfg.DURATION_MS;
@@ -1267,7 +1395,6 @@ export class GameScene extends Phaser.Scene {
       entry.textObj.setAlpha(t < 0.7 ? 1 : 1 - (t - 0.7) / 0.3);
     });
 
-    // Hit sparks
     this.hitEffectPool.forEachActive((entry) => {
       entry.elapsed += delta;
       const t = entry.elapsed / cCfg.HIT_EFFECT_DURATION_MS;
@@ -1278,16 +1405,11 @@ export class GameScene extends Phaser.Scene {
         return;
       }
       entry.img.setScale(
-        Phaser.Math.Linear(
-          cCfg.HIT_EFFECT_START_SCALE,
-          cCfg.HIT_EFFECT_END_SCALE,
-          t
-        )
+        Phaser.Math.Linear(cCfg.HIT_EFFECT_START_SCALE, entry.maxScale, t)
       );
       entry.img.setAlpha(1 - t);
     });
 
-    // Burn flame effects
     this.burnEffectPool.forEachActive((entry) => {
       entry.elapsed += delta;
       const t = entry.elapsed / bCfg.FX_DURATION_MS;
@@ -1302,7 +1424,6 @@ export class GameScene extends Phaser.Scene {
       entry.img.setAlpha(0.95 * (1 - t));
     });
 
-    // Puff & chest burst particles
     this.puffPool.forEachActive((entry) => {
       entry.elapsed += delta;
       const t = entry.elapsed / entry.duration;
@@ -1319,7 +1440,6 @@ export class GameScene extends Phaser.Scene {
       entry.img.setAlpha(0.95 * (1 - t));
     });
 
-    // Chest open flash
     this.chestFlashPool.forEachActive((entry) => {
       entry.elapsed += delta;
       const t = entry.elapsed / chCfg.FLASH_DURATION_MS;
@@ -1333,7 +1453,6 @@ export class GameScene extends Phaser.Scene {
       entry.img.setAlpha(1 - t);
     });
 
-    // Melee swing visuals
     this.swingPool.forEachActive((entry) => {
       entry.elapsed += delta;
       const t = entry.elapsed / entry.duration;
@@ -1349,6 +1468,28 @@ export class GameScene extends Phaser.Scene {
       );
       entry.img.setAlpha(cCfg.SWING_ALPHA * (1 - t));
     });
+  }
+
+  readPlayerInput() {
+    const kbLeft = this.cursors ? (this.cursors.left.isDown || this.keys.a.isDown) : false;
+    const kbRight = this.cursors ? (this.cursors.right.isDown || this.keys.d.isDown) : false;
+    const kbJumpDown = this.cursors
+      ? (this.cursors.up.isDown || this.keys.w.isDown || this.keys.space.isDown)
+      : false;
+    const kbJumpJustPressed = this.cursors
+      ? (
+        Phaser.Input.Keyboard.JustDown(this.cursors.up) ||
+        Phaser.Input.Keyboard.JustDown(this.keys.w) ||
+        Phaser.Input.Keyboard.JustDown(this.keys.space)
+      )
+      : false;
+
+    return {
+      left: kbLeft || this.touchControls.left,
+      right: kbRight || this.touchControls.right,
+      jumpDown: kbJumpDown || this.touchControls.jumpDown,
+      jumpJustPressed: kbJumpJustPressed || this.touchControls.jumpJustPressed
+    };
   }
 
   getAliveEnemyCount() {
@@ -1369,6 +1510,15 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    // Touch controls always stay active, including during fast room transitions
+    this.touchControls.update();
+    const inputState = this.readPlayerInput();
+
+    if (this.transitionPhase !== 'none') {
+      this.updateTransition(delta, inputState);
+      return;
+    }
+
     if (this.isDebugEnabled && this.keys) {
       if (Phaser.Input.Keyboard.JustDown(this.keys.g)) {
         this.dropDebugWeaponNearPlayer();
@@ -1379,40 +1529,38 @@ export class GameScene extends Phaser.Scene {
       if (Phaser.Input.Keyboard.JustDown(this.keys.v)) {
         this.addDebugGold();
       }
+      if (Phaser.Input.Keyboard.JustDown(this.keys.n)) {
+        this.debugClearRoom();
+      }
     }
-
-    this.touchControls.update();
-
-    const kbLeft = this.cursors ? (this.cursors.left.isDown || this.keys.a.isDown) : false;
-    const kbRight = this.cursors ? (this.cursors.right.isDown || this.keys.d.isDown) : false;
-    const kbJumpDown = this.cursors
-      ? (this.cursors.up.isDown || this.keys.w.isDown || this.keys.space.isDown)
-      : false;
-    const kbJumpJustPressed = this.cursors
-      ? (
-        Phaser.Input.Keyboard.JustDown(this.cursors.up) ||
-        Phaser.Input.Keyboard.JustDown(this.keys.w) ||
-        Phaser.Input.Keyboard.JustDown(this.keys.space)
-      )
-      : false;
-
-    const inputState = {
-      left: kbLeft || this.touchControls.left,
-      right: kbRight || this.touchControls.right,
-      jumpDown: kbJumpDown || this.touchControls.jumpDown,
-      jumpJustPressed: kbJumpJustPressed || this.touchControls.jumpJustPressed
-    };
 
     this.player.update(delta, inputState);
     this.autoAttack.update(delta, this.activeEnemies);
 
     this.updateEnemySpawner(delta);
 
+    const platformBounds = this.roomManager.platformBounds;
     for (let i = this.activeEnemies.length - 1; i >= 0; i--) {
-      this.activeEnemies[i].update(delta, this.player, this.platformBounds);
+      this.activeEnemies[i].update(delta, this.player, platformBounds);
     }
 
     this.updateChests(delta);
     this.updatePools(delta);
+
+    this.roomManager.update(
+      delta,
+      this.activeEnemies.length,
+      this.pendingWarnings.length
+    );
+
+    // Check if player walked into the open exit door
+    const rCfg = BALANCE.ROOMS;
+    if (
+      this.roomManager.isExitOpen &&
+      this.player.x >= rCfg.EXIT_TRIGGER_X &&
+      this.player.y >= rCfg.EXIT_TRIGGER_MIN_Y
+    ) {
+      this.startNextRoomTransition();
+    }
   }
 }

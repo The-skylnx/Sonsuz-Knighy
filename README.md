@@ -2,7 +2,7 @@
 
 A fast, mobile-first 2D platformer dungeon crawler built with HTML5, Phaser 3 (CDN), and vanilla ES modules (no build step).
 
-## Milestone Status: M4 — Chests and Passives
+## Milestone Status: M5A — Endless Rooms
 
 ### What Was Built
 
@@ -12,28 +12,29 @@ A fast, mobile-first 2D platformer dungeon crawler built with HTML5, Phaser 3 (C
 - **Controls & Movement:** Multi-touch Left/Right + Jump buttons (`input.addPointer(3)`, haptics where supported), keyboard parity (`WASD` / Arrows + `Space`), variable jump height, coyote time (`100 ms`), and jump buffer (`120 ms`).
 
 #### M2 — Combat Core
-- **Enemies:** Slime (platform patrol with edge detection) and Bat (sine-wave flight), `0.5s` warning marker before spawning, up to `6` alive at once.
-- **HP, Gold & Game Over:** `100` base Max HP, `800 ms` invulnerability blink, pooled coins (capped at `60`) with magnet pickup, and `"You died"` screen with a `500 ms` restart input guard.
+- **Enemies, HP & Gold:** Slime (platform patrol with edge detection) and Bat (sine-wave flight), `0.5s` spawn warning markers, `100` base Max HP with `800 ms` invulnerability blink, pooled coins (capped at `60`), and `"You died"` screen with a `500 ms` restart input guard.
 
 #### M3 — Weapons
-- **6 Weapon Types & 5 Rarities:** Rusty Sword, Dagger, Battle Axe, Short Bow, Magic Staff, and Boomerang generated via `createWeaponInstance` across Common–Legendary rarities with `Burn`, `Knockback`, and `Crit` affixes.
-- **Ground Pickups & Compare Modal:** `10%` enemy drop chance, rarity glow + `1.5s` pickup cooldown, gameplay-pausing side-by-side compare modal (`EQUIP` / `LEAVE`, `Enter` / `Esc`), and active weapon HUD frame.
+- **6 Weapon Types & 5 Rarities:** Rusty Sword, Dagger, Battle Axe, Short Bow, Magic Staff, and Boomerang generated via `createWeaponInstance` across Common–Legendary rarities with `Burn`, `Knockback`, and `Crit` affixes, `10%` enemy drop chance, and gameplay-pausing side-by-side compare modal (`EQUIP` / `LEAVE`).
 
 #### M4 — Chests and Passives
-- **Chests (`src/entities/Chest.js`):**
-  - 3 tiers: **Wooden (`30` gold)**, **Silver (`80` gold)**, and **Golden (`200` gold)** with floating coin + price bubbles.
-  - Spawns on a random platform every `8` enemy kills (max `2` active chests at once, tier weights `60 / 30 / 10`).
-  - Automatically opens when the player is within `70 px` with enough gold (`400 ms` anticipation shake -> light flash & radial particle burst -> item pops out); flashes red (throttled to `1s`) if unaffordable.
-  - Loot roll per opening: `45%` weapon (uses existing ground pickup + compare card), `40%` passive, `15%` consumable, using per-tier rarity weights in `src/config/balance.js`.
-- **9 Stacking Passives (`src/data/passives.js`, `player.stats`):**
-  - **Common:** Heart Charm (`+20` max HP & heal `20`), Boots of Wind (`+12%` move speed), Magnet Ring (`+40` magnet radius).
-  - **Uncommon:** Sharp Stone (`+15%` damage), Quick Gloves (`+15%` attack speed), Greedy Coin (`+25%` gold from enemies).
-  - **Rare:** Thorn Armor (reflects `6` contact damage per stack), Spring Shoes (unlocks 1 extra air jump with a pooled puff effect, preserving coyote time, jump buffer, and variable jump height).
-  - **Epic:** Vampire Fang (heals `1` HP per copy every `5` kills).
-  - Legendary rolls automatically fall back to the nearest lower rarity with passives (`Epic`). All modifiers live in `player.stats` so `balance.js` is never mutated.
-- **Consumables:** **Heal Orb** (restores `30%` max HP) and **Rage Orb** (`+40%` attack speed for `10s`, with a live countdown badge beside the HUD weapon frame).
-- **HUD & Pooling:** Passive icon row under the weapon frame with `x2`-style stack badges; pooled `ItemPickup`s, pickup banner texts, chest flashes, and puff/burst particles.
-- **Debug (`?debug=1`):** Press `G` (`+WPN`), `C` (`+CHEST`), or `V` (`+100G`), or tap the three on-screen debug buttons.
+- **3 Chest Tiers & 9 Passives:** Wooden (`30`), Silver (`80`), and Golden (`200`) chests auto-opening within `70 px` (`45%` weapon / `40%` passive / `15%` consumable); 9 stacking passives via central `player.stats` (including Spring Shoes double jump), Heal Orb & Rage Orb consumables, and HUD passive stack icons.
+
+#### M5A — Endless Rooms
+- **RoomManager & 10 Validated Templates (`src/systems/RoomManager.js`, `src/data/roomTemplates.js`):**
+  - Builds single-screen rooms from 10 hand-authored platform templates and tears down previous rooms leak-free by clearing a single reusable static physics group and releasing all active object pools (`coins`, `projectiles`, `pickups`, `FX`, `texts`).
+  - Includes `validateRoomTemplates()` checking `<= 95 px` vertical steps, `<= 150 px` horizontal gaps, door keep-out zones, and unobstructed ground paths (runs once at startup under `?debug=1`).
+- **Doors & Fast Transitions:**
+  - Decorative left entry door and stateful right exit door (red with iron bars while locked; glowing green with right arrow once cleared).
+  - Walking into the open exit door triggers a `400 ms` transition (`200 ms` fade out -> room rebuild -> `200 ms` fade in) with `1 s` spawn invulnerability while touch controls remain active.
+- **Combat & Treasure Rooms + Quota Spawner:**
+  - **Combat rooms:** Quota `3 + floor(depth * 0.6)` enemies with max alive `min(12, 4 + floor(depth / 4))` and a `30%` chance of 1 chest (`70 / 25 / 5` tier weights). On room clear, all remaining coins magnetize to the player for `1.5 s` before the exit door unlocks.
+  - **Treasure rooms (every 5th room: 5, 10, 15, ...):** No enemies, `1–3` chests (`20 / 55 / 25` tier weights), exit door open immediately.
+- **Depth Scaling & Cycling Palettes:**
+  - `depth = roomNumber - 1` scales enemy HP (`+12%/depth`), contact damage (`+8%/depth`), gold drops (`+6%/depth`), chest prices (`+10%/depth`), and weapon damage (`+8%/depth`).
+  - Cycles through 4 dungeon color palettes every 10 rooms (`Crypt Slate`, `Mossy Catacombs`, `Ember Forge`, `Astral Sanctum`).
+- **Projectile Collisions:** Arrows and homing magic orbs spark and despawn on hitting platforms or room walls, while boomerangs pass cleanly through platforms.
+- **HUD, Summary & Debug:** Top-center `"Room N"` counter, `1.5 s` room entry banner (`"Room N"` or `"Treasure Room"`), `"Room reached: N"` on Game Over (restart resets to Room 1), `?room=15` URL start parameter, and `N` / `CLEAR (N)` under `?debug=1` to clear the room and open the exit door immediately.
 
 ---
 
@@ -53,7 +54,7 @@ npx http-server . -p 8080 -a 0.0.0.0 -c-1
 python -m http.server 8080 --bind 0.0.0.0
 ```
 
-Then open **http://localhost:8080** (or **http://localhost:8080/?debug=1** for the debug overlay and `G` / `C` / `V` debug buttons) in your browser.
+Then open **http://localhost:8080** (or **http://localhost:8080/?debug=1&room=15** to test debug tools starting at Room 15) in your browser.
 
 ---
 
@@ -66,7 +67,7 @@ Then open **http://localhost:8080** (or **http://localhost:8080/?debug=1** for t
    ipconfig
    ```
    Look under **Wireless LAN adapter Wi-Fi** for **IPv4 Address**, e.g. `192.168.1.42`.
-4. Open `http://192.168.1.42:8080` (or `http://192.168.1.42:8080/?debug=1`) on your phone's browser and rotate to **landscape**.
+4. Open `http://192.168.1.42:8080` on your phone's browser and rotate to **landscape**.
 
 > **Troubleshooting:** If the page does not load on your phone, ensure your Windows network profile is **Private** or allow incoming port `8080` in **Windows Defender Firewall**.
 
@@ -84,7 +85,7 @@ git push
 
 ---
 
-## Known Issues / Limitations (M4)
-- **Audio is stubbed:** `AudioManager` provides no-op SFX hooks (including chest shake/open, item pickup, cant-afford, and double jump) until M6 per `GDD.md`.
+## Known Issues / Limitations (M5A)
+- **Audio is stubbed:** `AudioManager` provides no-op SFX hooks until M6 per `GDD.md`.
 - **iOS Safari haptics:** iOS Safari does not support `navigator.vibrate()`, so button vibration only triggers on supported browsers/devices.
 - **Phaser CDN:** Phaser 3 loads from jsDelivr CDN until offline PWA packaging in M6.

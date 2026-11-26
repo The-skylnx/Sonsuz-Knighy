@@ -56,6 +56,14 @@ export class AudioManager {
     this._triggerHook('double_jump');
   }
 
+  playDoorOpen() {
+    this._triggerHook('door_open');
+  }
+
+  playRoomTransition() {
+    this._triggerHook('room_transition');
+  }
+
   playEnemyHit() {
     this._triggerHook('enemy_hit');
   }

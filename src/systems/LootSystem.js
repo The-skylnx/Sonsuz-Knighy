@@ -86,7 +86,7 @@ export function createWeaponInstance(baseId, rarity = 'common', depth = 0) {
 
   const variance =
     sCfg.VARIANCE_MIN + Math.random() * (sCfg.VARIANCE_MAX - sCfg.VARIANCE_MIN);
-  const depthMultiplier = 1 + sCfg.DEPTH_FACTOR * depth;
+  const depthMultiplier = 1 + BALANCE.DEPTH_SCALING.WEAPON_DAMAGE_FACTOR * depth;
   const rawDamage = base.baseDamage * rarityCfg.multiplier * variance * depthMultiplier;
   const damage = Math.max(1, Math.round(rawDamage));
 
@@ -117,6 +117,10 @@ export function rollChestTier() {
     weights[tierKey] = cCfg.TIERS[tierKey].spawnWeight;
   }
   return rollWeightedMap(weights, cCfg.TIER_ORDER);
+}
+
+export function rollChestTierByWeights(weightsMap) {
+  return rollWeightedMap(weightsMap, BALANCE.CHESTS.TIER_ORDER);
 }
 
 export function rollPassiveForRarity(rolledRarity) {

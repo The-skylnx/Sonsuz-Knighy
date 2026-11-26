@@ -2,18 +2,23 @@ import { BALANCE } from '../config/balance.js';
 import { ENEMIES } from '../data/enemies.js';
 
 export class Enemy extends Phaser.Physics.Arcade.Sprite {
-  constructor(scene, x, y, typeKey) {
+  constructor(scene, x, y, typeKey, depth = 0) {
     const cfg = ENEMIES[typeKey];
     super(scene, x, y, cfg.id);
 
     scene.add.existing(this);
     scene.physics.add.existing(this);
 
+    const dScale = BALANCE.DEPTH_SCALING;
     this.cfg = cfg;
     this.typeKey = typeKey;
-    this.maxHp = cfg.hp;
-    this.hp = cfg.hp;
-    this.contactDamage = cfg.contactDamage;
+    this.depth = depth;
+    this.maxHp = Math.max(1, Math.round(cfg.hp * (1 + dScale.ENEMY_HP_FACTOR * depth)));
+    this.hp = this.maxHp;
+    this.contactDamage = Math.max(
+      1,
+      Math.round(cfg.contactDamage * (1 + dScale.ENEMY_DAMAGE_FACTOR * depth))
+    );
     this.isDead = false;
     this.hitFlashTimer = 0;
     this.knockbackTimer = 0;

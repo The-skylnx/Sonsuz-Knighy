@@ -10,7 +10,7 @@ export class Chest {
     const cCfg = BALANCE.CHESTS;
     this.tierCfg = cCfg.TIERS[tierId] || cCfg.TIERS.wooden;
     this.price = Math.round(
-      this.tierCfg.basePrice * (1 + cCfg.DEPTH_PRICE_FACTOR * depth)
+      this.tierCfg.basePrice * (1 + BALANCE.DEPTH_SCALING.CHEST_PRICE_FACTOR * depth)
     );
 
     this.state = 'closed'; // 'closed' | 'shaking' | 'opened' | 'done'

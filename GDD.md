@@ -1,6 +1,6 @@
 # GAME DESIGN DOCUMENT: Sonsuz Yankı
 
-Version: 0.3 (M1, M2, M3, and M4 complete, M5 next)
+Version: 0.4 (M1-M5A complete, M5B next)
 Engine/Stack: HTML5 + Phaser 3 (CDN), vanilla JS (ES modules), no build step required
 Primary targets: phones and tablets (landscape), desktop browser as secondary
 
@@ -11,16 +11,16 @@ Primary targets: phones and tablets (landscape), desktop browser as secondary
 ## 0. Project Status and Implementation Notes
 
 - **Game name:** Sonsuz Yankı.
-- **M1 Foundation: DONE. M2 Combat core: DONE. M3 Weapons: DONE. M4 Chests and passives: DONE.** Do not rewrite these systems; extend them.
-- **Scenes:** BootScene (placeholder textures), GameScene (gameplay), UIScene (HUD + weapon compare modal + passive icon row + Rage buff timer, runs in parallel with GameScene), GameOverScene (with 500 ms input lock).
-- **Entities:** Player (with central `player.stats` and Spring Shoes double jump), Enemy (Slime, Bat, with `knockbackTimer` and Burn DoT), Chest (Wooden, Silver, Golden), Coin, WeaponPickup, ItemPickup, Projectile. **Systems:** TouchControls, AutoAttack (melee + ranged), LootSystem (`createWeaponInstance`, `rollChestTier`, `rollChestLoot`), ObjectPool, AudioManager (no-op stub until M6).
-- **Data:** `src/data/weapons.js` (all 6 weapons), `src/data/passives.js` (all 9 passives), `src/data/enemies.js`. All numbers live in `src/config/balance.js`.
-- **Player values in use:** Max HP 100, move speed 240, `MAX_VELOCITY_X` 900, invulnerability 800 ms after a hit, spawn X 64, central `player.stats` modifier computation so `balance.js` is never mutated.
-- **Spawner in use:** max 6 enemies alive (including pending warnings), 0.5 s warning marker, at least 180 px away from the player.
-- **Gold & Chests in use:** coin value 1, 3-6 coins per kill (scaled by Greedy Coin), magnet radius 80 (extended by Magnet Ring), max 60 active coins; 3 chest tiers (Wooden 30, Silver 80, Golden 200) spawning every 8 kills on platforms (max 2 active, weights 60/30/10), auto-opening within 70 px with 400 ms shake -> flash/burst -> 45% weapon / 40% passive / 15% consumable (Heal Orb, Rage Orb).
-- **Weapons in use:** 5 rarities (Common to Legendary), 3 M3 affixes (Burn, Knockback, Crit), 10% enemy weapon drop chance, 1.5 s ground pickup cooldown, pooled projectiles (max 30), pooled weapon/item pickups and FX, active weapon icon with rarity frame + stacked passive icon row under HP bar.
-- **Debug:** open the game with `?debug=1` to see FPS, touch pointers, player velocity, enemy, coin, and chest counts; press `G` (drop weapon), `C` (spawn chest), `V` (+100 gold) or tap the on-screen debug buttons.
-- **Known simplifications (fine for now):** audio is a stub, enemies are not pooled (cap is 6), the test room is a single hand-made room (RoomManager arrives in M5).
+- **M1 Foundation: DONE. M2 Combat core: DONE. M3 Weapons: DONE. M4 Chests and passives: DONE. M5A Endless rooms: DONE.** Do not rewrite these systems; extend them.
+- **Scenes:** BootScene (placeholder textures), GameScene (gameplay + fast 400 ms room transitions), UIScene (HUD + top-center `"Room N"` + 1.5 s room banner + weapon compare modal + passive icon row + Rage buff timer, runs in parallel with GameScene), GameOverScene (`"Room reached: N"`, 500 ms input lock, resets run to Room 1).
+- **Entities:** Player (central `player.stats` and Spring Shoes double jump), Enemy (Slime, Bat, depth-scaled HP/damage/gold, `knockbackTimer` and Burn DoT), Chest (Wooden, Silver, Golden, depth-scaled price), Coin, WeaponPickup, ItemPickup, Projectile (arrows & orbs collide with platforms/walls; boomerangs pass through). **Systems:** TouchControls, AutoAttack (melee + ranged), RoomManager (reusable static platform group, entry/exit doors, Combat & Treasure rooms, 4 cycling palettes every 10 rooms), LootSystem (`createWeaponInstance`, `rollChestTier`, `rollChestTierByWeights`, `rollChestLoot`), ObjectPool (`releaseAll` on room teardown), AudioManager (no-op stub until M6).
+- **Data:** `src/data/weapons.js` (all 6 weapons), `src/data/passives.js` (all 9 passives), `src/data/enemies.js`, `src/data/roomTemplates.js` (10 validated templates + `validateRoomTemplates()`). All numbers live in `src/config/balance.js`.
+- **Player values in use:** Max HP 100, move speed 240, `MAX_VELOCITY_X` 900, invulnerability 800 ms after hit (1000 ms on room entry), spawn X 88 next to left entry door, central `player.stats` modifier computation so `balance.js` is never mutated.
+- **Rooms & Spawner in use:** `depth = roomNumber - 1`; Combat rooms (`3 + floor(depth * 0.6)` quota, `min(12, 4 + floor(depth / 4))` max alive, 0.5 s warning marker, 30% chance of 1 chest with weights 70/25/5, 1.5 s coin magnet sweep on clear before unlocking green exit door) and Treasure rooms every 5th room (1-3 chests with weights 20/55/25, exit door open from start).
+- **Gold & Chests in use:** coin value 1, 3-6 base coins per kill scaled by `(1 + 0.06 * depth)` and Greedy Coin, magnet radius 80 (extended by Magnet Ring), max 60 active coins; 3 chest tiers (base 30/80/200 scaled by `1 + 0.10 * depth`) auto-opening within 70 px with 400 ms shake -> flash/burst -> 45% weapon / 40% passive / 15% consumable (Heal Orb, Rage Orb).
+- **Weapons in use:** 5 rarities (Common to Legendary), depth-scaled damage (`1 + 0.08 * depth`), 3 M3 affixes (Burn, Knockback, Crit), 10% enemy weapon drop chance, 1.5 s ground pickup cooldown, pooled projectiles (max 30), pooled weapon/item pickups and FX, active weapon icon with rarity frame + stacked passive icon row under HP bar.
+- **Debug:** open with `?debug=1` (runs `validateRoomTemplates()` once at startup; shows FPS, touch pointers, room/depth/type, velocity, enemy/quota, coin, and chest counts; keys/buttons `G` drop weapon, `C` spawn chest, `V` +100 gold, `N` clear room & open exit door) and `?room=15` to start at Room 15.
+- **Known simplifications (fine for now):** audio is a stub, enemies are not pooled (max alive capped at 12), Archer/Charger/Elite/Boss/Rest rooms arrive in M5B.
 
 ---
 
@@ -291,8 +291,10 @@ Show picked-up passives as small icons in a row under the HUD.
 **M4 - Chests and passives (DONE):** 3 chest tiers, price scaling, loot tables, passive items, passive icons in HUD.
 *Done when:* gold -> chest -> item loop is satisfying and readable.
 
-**M5 - Endless dungeon (NEXT):** RoomManager, templates, door lock/unlock, depth scaling, Archer + Charger + Elite, treasure room, boss room + first boss, rest room.
-*Done when:* a run can continue past Room 20 with rising difficulty.
+**M5A - Endless rooms (DONE):** RoomManager, room templates, door lock/unlock, room transitions, depth scaling, treasure rooms, room counter in the HUD, projectile-vs-platform collisions.
+*Done when:* a run can continue past Room 20 with rising difficulty and no errors or memory growth.
+
+**M5B - New enemies and boss (NEXT):** Archer, Charger, Elite enemies, first boss on every 10th room, rest room after each boss. (Spec is written after M5A is done.)
 
 **M6 - Meta + polish:** Shards, permanent upgrades, save system, menu, settings, juice pass, AudioManager, PWA.
 *Done when:* full loop works: run -> die -> upgrade -> run again; installable on phone.
@@ -340,6 +342,25 @@ Show picked-up passives as small icons in a row under the HUD.
 - **HUD:** a row of passive icons (placeholder colored circles with a letter) under the weapon frame, with an "x2" style counter for stacks.
 - **Pooling:** pickups for items popping out of chests, coins and effects use pools; chests themselves (max 2 alive) do not need a pool.
 - **Stats:** Player gets a central place for modifiers (for example `player.stats` with multipliers) so passives never edit balance.js values directly.
+
+### 15.3 M5A detailed spec (Endless rooms)
+
+- **Depth:** room number N starts at 1 and increases forever; `depth = N - 1`. Depth drives all scaling. For testing, `?room=15` in the URL starts the run at room 15 (works together with `?debug=1`).
+- **RoomManager** (`src/systems/RoomManager.js`): builds the current room from a template, tears down the previous room completely, and owns room state (type, enemies still to spawn, cleared flag, doors). Colliders are created once against a reusable static platform group; clear the group between rooms instead of creating new colliders, so nothing leaks.
+- **Room templates** (`src/data/roomTemplates.js`): 8 to 10 hand-authored templates, each an array of platforms `{ x, y, width, height }` in the 1280x720 room. A full-width ground is always present. Rules every template must follow: vertical step between platforms that must be reached is at most 95 px (max jump height is 112 px), horizontal gaps are at most 150 px, no platform may sit in the door areas (x < 150 or x > 1130, within 220 px above the ground), and no platform may block the way from the left door to the right door. Add `validateRoomTemplates()` that checks the step and door rules and prints `console.warn` messages; run it once at startup when `?debug=1` is set.
+- **Doors:** a decorative entry door at the left edge (the player spawns next to it) and an exit door at the right edge. In a combat room the exit door is locked (red, with bars) until the room is cleared, then it opens (green glow, small arrow pointing right). Walking into the open door triggers the transition. Touch controls stay active the whole time.
+- **Transition:** 200 ms fade out, rebuild, 200 ms fade in, player placed at the left door with 1 s of invulnerability. The whole transition must feel under half a second. During the transition the player cannot be hurt and the spawner is paused.
+- **Room types in M5A:** Combat (default) and Treasure (every 5th room: 5, 10, 15, ...). M5B will turn every 10th room into a boss room, so in M5A rooms 10, 20, ... are simply Treasure rooms.
+  - Combat room: total enemies to spawn = `3 + floor(depth * 0.6)`. Max alive at once = `min(12, 4 + floor(depth / 4))`. Reuse the existing 0.5 s warning-marker spawner, but replace the endless timer spawner with this quota. The room is cleared when the quota has spawned and all enemies are dead. Still only Slime and Bat in M5A.
+  - Treasure room: no enemies, 1 to 3 chests (tier weights Wooden 20, Silver 55, Golden 25), exit door open from the start.
+  - Combat rooms have a 30 percent chance of containing one chest from the start (tier weights Wooden 70, Silver 25, Golden 5) placed on a random platform. This replaces the "every 8 kills" chest spawn from M4; keep the `C` and `V` debug keys.
+- **On room clear:** all coins in the room magnetize to the player for 1.5 s (so no gold is lost), then the door opens. Weapon pickups and unopened chests are left behind when leaving.
+- **Depth scaling:** enemy HP x `(1 + 0.12 * depth)`, enemy contact damage x `(1 + 0.08 * depth)`, enemy gold x `(1 + 0.06 * depth)`, chest price x `(1 + 0.10 * depth)` (already in M4, now fed with real depth), weapon damage uses the depth in `createWeaponInstance` for every drop and chest. All factors live in balance.js.
+- **Themes:** the palette (background, grid, platform colors) changes every 10 rooms by cycling through 4 palettes in balance.js. Mechanics stay the same.
+- **Projectile collisions:** arrows and magic orbs are removed when they hit a platform or room wall (spawn a tiny hit spark). Boomerangs pass through platforms.
+- **Cleanup on every transition:** deactivate all projectiles, coins, weapon pickups, chests, burn effects, damage numbers and pending warnings; destroy room platform objects; regenerate `platformBounds` and `spawnSurfaces` used by Slime patrol and the spawner. Player stats, weapon, passives, buffs and gold carry over.
+- **HUD:** "Room N" at the top center of UIScene. At the start of each room show a 1.5 s banner ("Room 7", or "Treasure Room"). The Game Over screen shows "Room reached: N". Restart resets the run to room 1 with all run state reset.
+- **Debug (`?debug=1`):** `N` key (and a small on-screen DEBUG button) clears the room and opens the door immediately; the debug overlay also shows the room number and depth.
 
 ---
 

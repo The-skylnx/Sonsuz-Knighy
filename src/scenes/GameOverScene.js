@@ -5,6 +5,10 @@ export class GameOverScene extends Phaser.Scene {
     super('GameOverScene');
   }
 
+  init(data) {
+    this.roomReached = (data && data.roomReached) || 1;
+  }
+
   create() {
     const g = BALANCE.GAME_OVER;
     const cx = BALANCE.GAME.WIDTH / 2;
@@ -31,6 +35,21 @@ export class GameOverScene extends Phaser.Scene {
       strokeThickness: g.TITLE_STROKE_WIDTH
     });
     title.setOrigin(0.5);
+
+    const subtitle = this.add.text(
+      cx,
+      cy + g.SUBTITLE_OFFSET_Y,
+      `Room reached: ${this.roomReached}`,
+      {
+        fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, sans-serif',
+        fontSize: g.SUBTITLE_FONT_SIZE,
+        fontStyle: 'bold',
+        color: g.SUBTITLE_COLOR,
+        stroke: g.TITLE_STROKE,
+        strokeThickness: 4
+      }
+    );
+    subtitle.setOrigin(0.5);
 
     const btnY = cy + g.BUTTON_OFFSET_Y;
     const btnContainer = this.add.container(cx, btnY);
@@ -132,6 +151,6 @@ export class GameOverScene extends Phaser.Scene {
 
     this.scene.stop('UIScene');
     this.scene.stop('GameOverScene');
-    this.scene.start('GameScene');
+    this.scene.start('GameScene', { forceStartRoom: 1 });
   }
 }

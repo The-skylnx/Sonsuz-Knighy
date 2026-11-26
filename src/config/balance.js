@@ -32,7 +32,7 @@ export const BALANCE = {
     COYOTE_TIME_MS: 100,
     JUMP_BUFFER_MS: 120,
     MAX_FALL_SPEED: 900,
-    SPAWN_X: 64,
+    SPAWN_X: 88,
     SPAWN_Y: 600,
     MAX_HP: 100,
     DAMAGE_MULTIPLIER: 1.0,
@@ -65,28 +65,98 @@ export const BALANCE = {
     DEPTH: 100
   },
 
-  TEST_ROOM: {
+  ROOMS: {
     GROUND: {
       x: 640,
       y: 688,
       width: 1280,
       height: 64,
-      color: 0x2b2d42,
-      topColor: 0x5c677d,
       topHeight: 6
     },
-    // Max single-jump height = 560^2 / (2 * 1400) = 112px.
-    // Vertical steps here are 82-86px with 60-65px horizontal gaps,
-    // so every platform is comfortably reachable with a single jump.
-    PLATFORMS: [
-      { x: 210, y: 580, width: 220, height: 20 },
-      { x: 495, y: 496, width: 220, height: 20 },
-      { x: 780, y: 414, width: 220, height: 20 },
-      { x: 1050, y: 580, width: 200, height: 20 }
-    ],
-    PLATFORM_COLOR: 0x3a405a,
-    PLATFORM_TOP_COLOR: 0x7b8cde,
-    PLATFORM_TOP_HEIGHT: 4
+    PLATFORM_TOP_HEIGHT: 4,
+    TREASURE_EVERY: 5,
+    PALETTE_ROOMS_CYCLE: 10,
+    BASE_ENEMY_QUOTA: 3,
+    QUOTA_DEPTH_FACTOR: 0.6,
+    BASE_MAX_ALIVE: 4,
+    MAX_ALIVE_DEPTH_DIVISOR: 4,
+    MAX_ALIVE_CAP: 12,
+    COMBAT_CHEST_CHANCE: 0.30,
+    TREASURE_CHEST_MIN: 1,
+    TREASURE_CHEST_MAX: 3,
+    CLEAR_MAGNET_DURATION_MS: 1500,
+    FADE_OUT_MS: 200,
+    FADE_IN_MS: 200,
+    TRANSITION_INVULN_MS: 1000,
+    DOOR_WIDTH: 48,
+    DOOR_HEIGHT: 88,
+    ENTRY_DOOR_X: 32,
+    EXIT_DOOR_X: 1248,
+    EXIT_TRIGGER_X: 1218,
+    EXIT_TRIGGER_MIN_Y: 535,
+    DOOR_DEPTH: 12,
+    ENTRY_FRAME_COLOR: 0x4a4e69,
+    ENTRY_FILL_COLOR: 0x12131f,
+    LOCKED_COLOR: 0xef476f,
+    LOCKED_DARK_COLOR: 0x2b121c,
+    OPEN_COLOR: 0x52b788,
+    OPEN_GLOW_COLOR: 0x80ffdb,
+    OPEN_DARK_COLOR: 0x122b22,
+    VALIDATION: {
+      MAX_VERTICAL_STEP: 95,
+      MAX_HORIZONTAL_GAP: 150,
+      LEFT_DOOR_KEEP_OUT_X: 150,
+      RIGHT_DOOR_KEEP_OUT_X: 1130,
+      DOOR_KEEP_OUT_HEIGHT_ABOVE_GROUND: 220,
+      MIN_GROUND_HEADROOM: 54
+    }
+  },
+
+  THEMES: [
+    {
+      name: 'Crypt Slate',
+      backgroundColor: '#161622',
+      gridColor: 0x222238,
+      groundColor: 0x2b2d42,
+      groundTopColor: 0x5c677d,
+      platformColor: 0x3a405a,
+      platformTopColor: 0x7b8cde
+    },
+    {
+      name: 'Mossy Catacombs',
+      backgroundColor: '#121e1b',
+      gridColor: 0x1d312c,
+      groundColor: 0x243b35,
+      groundTopColor: 0x52b788,
+      platformColor: 0x2d4a43,
+      platformTopColor: 0x74c69d
+    },
+    {
+      name: 'Ember Forge',
+      backgroundColor: '#211316',
+      gridColor: 0x361e24,
+      groundColor: 0x3d2229,
+      groundTopColor: 0xe07a5f,
+      platformColor: 0x4f2c35,
+      platformTopColor: 0xf4a261
+    },
+    {
+      name: 'Astral Sanctum',
+      backgroundColor: '#191226',
+      gridColor: 0x2b1f42,
+      groundColor: 0x31234a,
+      groundTopColor: 0x9d4edd,
+      platformColor: 0x412e61,
+      platformTopColor: 0xc77dff
+    }
+  ],
+
+  DEPTH_SCALING: {
+    ENEMY_HP_FACTOR: 0.12,
+    ENEMY_DAMAGE_FACTOR: 0.08,
+    ENEMY_GOLD_FACTOR: 0.06,
+    CHEST_PRICE_FACTOR: 0.10,
+    WEAPON_DAMAGE_FACTOR: 0.08
   },
 
   RARITIES: {
@@ -182,6 +252,7 @@ export const BALANCE = {
     MAX_ACTIVE: 30,
     POOL_INITIAL: 14,
     ROOM_MARGIN: 24,
+    WALL_HIT_PAD: 8,
     MAX_LIFETIME_MS: 5000,
     ARROW_WIDTH: 24,
     ARROW_HEIGHT: 8,
@@ -226,17 +297,17 @@ export const BALANCE = {
   },
 
   CHESTS: {
-    MAX_ACTIVE: 2,
-    KILLS_PER_SPAWN: 8,
+    MAX_ACTIVE: 3,
+    DEBUG_MAX_ACTIVE: 3,
     OPEN_RADIUS: 70,
     DEPTH_PRICE_FACTOR: 0.10,
     WIDTH: 46,
     HEIGHT: 36,
     EDGE_MARGIN: 44,
-    GROUND_SAFE_X: 140,
-    MAX_PLACE_ATTEMPTS: 12,
+    GROUND_SAFE_X: 180,
+    MAX_PLACE_ATTEMPTS: 16,
     DEBUG_OFFSET_X: 78,
-    DEBUG_CLAMP_X: 60,
+    DEBUG_CLAMP_X: 160,
     MIN_CHEST_SPACING: 110,
     SHAKE_DURATION_MS: 400,
     SHAKE_AMPLITUDE_X: 4,
@@ -265,6 +336,16 @@ export const BALANCE = {
       weapon: 45,
       passive: 40,
       consumable: 15
+    },
+    COMBAT_TIER_WEIGHTS: {
+      wooden: 70,
+      silver: 25,
+      golden: 5
+    },
+    TREASURE_TIER_WEIGHTS: {
+      wooden: 20,
+      silver: 55,
+      golden: 25
     },
     TIER_ORDER: ['wooden', 'silver', 'golden'],
     TIERS: {
@@ -419,16 +500,17 @@ export const BALANCE = {
   },
 
   SPAWNER: {
-    MAX_ALIVE: 6,
     WARNING_DURATION_MS: 500,
     INITIAL_SPAWN_COUNT: 3,
     INITIAL_SPAWN_DELAY_MS: 350,
-    SPAWN_INTERVAL_MS: 2000,
+    SPAWN_INTERVAL_MS: 1400,
     MIN_PLAYER_DISTANCE: 180,
     SLIME_CHANCE: 0.55,
     PLATFORM_EDGE_MARGIN: 28,
-    BAT_MIN_X: 90,
-    BAT_MAX_X: 1190,
+    GROUND_MIN_SPAWN_X: 180,
+    GROUND_MAX_SPAWN_X: 1120,
+    BAT_MIN_X: 170,
+    BAT_MAX_X: 1120,
     BAT_MIN_Y: 100,
     BAT_MAX_Y: 420,
     WARNING_SIZE: 34,
@@ -438,7 +520,7 @@ export const BALANCE = {
     WARNING_PULSE_SPEED: 0.016,
     WARNING_MIN_SCALE: 0.8,
     WARNING_MAX_SCALE: 1.2,
-    MAX_SPAWN_ATTEMPTS: 12,
+    MAX_SPAWN_ATTEMPTS: 14,
     FALLBACK_SPAWN_X: 960,
     FALLBACK_SPAWN_Y: 200
   },
@@ -459,7 +541,7 @@ export const BALANCE = {
     HIT_EFFECT_DURATION_MS: 160,
     HIT_EFFECT_START_SCALE: 0.45,
     HIT_EFFECT_END_SCALE: 1.35,
-    HIT_EFFECT_POOL_INITIAL: 8,
+    HIT_EFFECT_POOL_INITIAL: 10,
     DMG_TEXT_POOL_INITIAL: 14,
     DMG_TEXT_DURATION_MS: 600,
     DMG_TEXT_RISE_SPEED: 55,
@@ -495,7 +577,7 @@ export const BALANCE = {
     BOUNCE: 0.45,
     DRAG_X: 180,
     MAGNET_DELAY_MS: 180,
-    MAGNET_SPEED: 520,
+    MAGNET_SPEED: 560,
     PICKUP_RADIUS: 26,
     COMBO_WINDOW_MS: 600,
     COMBO_PITCH_STEP: 0.06,
@@ -513,10 +595,16 @@ export const BALANCE = {
     HP_BORDER_COLOR: 0xffffff,
     HP_BORDER_WIDTH: 2,
     FONT_SIZE: '28px',
+    ROOM_FONT_SIZE: '28px',
     TEXT_COLOR: '#ffffff',
     GOLD_TEXT_COLOR: '#ffd166',
+    TREASURE_BANNER_COLOR: '#ffd166',
+    BANNER_FONT_SIZE: '44px',
+    BANNER_Y: 205,
+    BANNER_DURATION_MS: 1500,
     TEXT_STROKE: '#0d0d16',
     TEXT_STROKE_WIDTH: 4,
+    BANNER_STROKE_WIDTH: 6,
     GOLD_ICON_SIZE: 26,
     GOLD_ICON_GAP: 10,
     WEAPON_FRAME_OFFSET_Y: 10,
@@ -532,7 +620,8 @@ export const BALANCE = {
     PASSIVE_STACK_SIZE: '14px',
     RAGE_BADGE_OFFSET_X: 12,
     RAGE_BADGE_RADIUS: 16,
-    RAGE_TIMER_FONT_SIZE: '20px'
+    RAGE_TIMER_FONT_SIZE: '20px',
+    FADE_OVERLAY_DEPTH: 190
   },
 
   COMPARE_CARD: {
@@ -587,12 +676,15 @@ export const BALANCE = {
     TITLE_COLOR: '#ef476f',
     TITLE_STROKE: '#0d0d16',
     TITLE_STROKE_WIDTH: 6,
-    TITLE_OFFSET_Y: -70,
+    TITLE_OFFSET_Y: -95,
+    SUBTITLE_FONT_SIZE: '30px',
+    SUBTITLE_COLOR: '#f4f6fb',
+    SUBTITLE_OFFSET_Y: -22,
     BUTTON_TEXT: 'RESTART',
     BUTTON_WIDTH: 280,
     BUTTON_HEIGHT: 88,
     BUTTON_RADIUS: 18,
-    BUTTON_OFFSET_Y: 55,
+    BUTTON_OFFSET_Y: 70,
     BUTTON_COLOR: 0x4cc9f0,
     BUTTON_PRESSED_COLOR: 0x3a9fc0,
     BUTTON_BORDER_COLOR: 0xffffff,
@@ -607,20 +699,22 @@ export const BALANCE = {
     Y: 168,
     PADDING_X: 10,
     PADDING_Y: 6,
-    FONT_SIZE: '15px',
+    FONT_SIZE: '14px',
     TEXT_COLOR: '#80ffdb',
     BG_COLOR: '#0d0d16cc',
-    BTN_Y: 274,
+    BTN_Y: 292,
     BTN_WIDTH: 122,
-    BTN_HEIGHT: 40,
-    BTN_GAP: 8,
+    BTN_HEIGHT: 38,
+    BTN_GAP_X: 8,
+    BTN_GAP_Y: 6,
     BTN_RADIUS: 8,
     BTN_COLOR: 0x3a405a,
     BTN_PRESSED_COLOR: 0x4cc9f0,
     BTN_BORDER_COLOR: 0x80ffdb,
-    BTN_FONT_SIZE: '14px',
+    BTN_FONT_SIZE: '13px',
     BTN_WEAPON_LABEL: '+WPN (G)',
     BTN_CHEST_LABEL: '+CHEST (C)',
-    BTN_GOLD_LABEL: '+100G (V)'
+    BTN_GOLD_LABEL: '+100G (V)',
+    BTN_NEXT_LABEL: 'CLEAR (N)'
   }
 };
