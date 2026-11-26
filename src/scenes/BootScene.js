@@ -10,6 +10,8 @@ export class BootScene extends Phaser.Scene {
     this.createPlayerTexture();
     this.createSlimeTexture();
     this.createBatTexture();
+    this.createArcherTexture();
+    this.createChargerTexture();
     this.createCoinTexture();
     this.createSwordArcTexture();
     this.createHitEffectTexture();
@@ -89,6 +91,55 @@ export class BootScene extends Phaser.Scene {
     gfx.fillRect(cx + 3, cy - 2, 3, 3);
 
     gfx.generateTexture(b.id, b.width, b.height);
+    gfx.destroy();
+  }
+
+  createArcherTexture() {
+    const a = ENEMIES.archer;
+    const gfx = this.make.graphics({ x: 0, y: 0, add: false });
+
+    // Hooded cloak body (facing right)
+    gfx.fillStyle(a.color, 1);
+    gfx.fillRoundedRect(2, 6, a.width - 8, a.height - 6, { tl: 10, tr: 8, bl: 2, br: 2 });
+    gfx.fillTriangle(6, 8, 16, 0, 24, 8);
+
+    gfx.lineStyle(a.borderWidth, a.borderColor, 1);
+    gfx.strokeRoundedRect(2, 6, a.width - 8, a.height - 6, { tl: 10, tr: 8, bl: 2, br: 2 });
+
+    // Eye
+    gfx.fillStyle(a.eyeColor, 1);
+    gfx.fillRect(18, 13, 5, 5);
+
+    // Front bow arc (right side)
+    gfx.lineStyle(2.5, a.bowColor, 1);
+    gfx.beginPath();
+    gfx.arc(a.width - 10, a.height * 0.54, 10, -1.1, 1.1, false);
+    gfx.strokePath();
+
+    gfx.generateTexture(a.id, a.width, a.height);
+    gfx.destroy();
+  }
+
+  createChargerTexture() {
+    const c = ENEMIES.charger;
+    const gfx = this.make.graphics({ x: 0, y: 0, add: false });
+
+    // Heavy armored torso
+    gfx.fillStyle(c.color, 1);
+    gfx.fillRoundedRect(1, 5, c.width - 6, c.height - 5, 6);
+
+    gfx.lineStyle(c.borderWidth, c.borderColor, 1);
+    gfx.strokeRoundedRect(1, 5, c.width - 6, c.height - 5, 6);
+
+    // Forward charging horn (facing right)
+    gfx.fillStyle(c.hornColor, 1);
+    gfx.fillTriangle(c.width - 8, 9, c.width, 4, c.width - 4, 16);
+
+    // Angry eye
+    gfx.fillStyle(c.eyeColor, 1);
+    gfx.fillRect(c.width - 15, 13, 6, 5);
+
+    gfx.generateTexture(c.id, c.width, c.height);
     gfx.destroy();
   }
 
@@ -187,7 +238,9 @@ export class BootScene extends Phaser.Scene {
 
   createProjectileTextures() {
     const p = BALANCE.PROJECTILES;
+    const ep = BALANCE.ENEMY_PROJECTILES;
 
+    // Player Arrow
     const arrowGfx = this.make.graphics({ x: 0, y: 0, add: false });
     const aw = p.ARROW_WIDTH;
     const ah = p.ARROW_HEIGHT;
@@ -198,6 +251,18 @@ export class BootScene extends Phaser.Scene {
     arrowGfx.generateTexture('proj_arrow', aw, ah);
     arrowGfx.destroy();
 
+    // Enemy Arrow (distinct crimson tip)
+    const eArrowGfx = this.make.graphics({ x: 0, y: 0, add: false });
+    const eaw = ep.WIDTH;
+    const eah = ep.HEIGHT;
+    eArrowGfx.fillStyle(ep.SHAFT_COLOR, 1);
+    eArrowGfx.fillRect(2, eah / 2 - 1, eaw - 9, 2);
+    eArrowGfx.fillStyle(ep.HEAD_COLOR, 1);
+    eArrowGfx.fillTriangle(eaw, eah / 2, eaw - 8, 0, eaw - 8, eah);
+    eArrowGfx.generateTexture('enemy_arrow', eaw, eah);
+    eArrowGfx.destroy();
+
+    // Homing Orb
     const orbSize = p.ORB_SIZE;
     const orbHalf = orbSize / 2;
     const orbGfx = this.make.graphics({ x: 0, y: 0, add: false });
@@ -208,6 +273,7 @@ export class BootScene extends Phaser.Scene {
     orbGfx.generateTexture('proj_orb', orbSize, orbSize);
     orbGfx.destroy();
 
+    // Boomerang
     const bSize = p.BOOMERANG_SIZE;
     const bHalf = bSize / 2;
     const bGfx = this.make.graphics({ x: 0, y: 0, add: false });
@@ -327,7 +393,6 @@ export class BootScene extends Phaser.Scene {
     for (const tierKey of cCfg.TIER_ORDER) {
       const t = cCfg.TIERS[tierKey];
 
-      // Closed chest
       let gfx = this.make.graphics({ x: 0, y: 0, add: false });
       gfx.fillStyle(t.bodyColor, 1);
       gfx.fillRoundedRect(1, 4, w - 2, h - 4, { tl: 8, tr: 8, bl: 3, br: 3 });
@@ -341,7 +406,6 @@ export class BootScene extends Phaser.Scene {
       gfx.generateTexture(`chest_${tierKey}_closed`, w, h);
       gfx.destroy();
 
-      // Opened chest
       gfx = this.make.graphics({ x: 0, y: 0, add: false });
       gfx.fillStyle(0x0d0d16, 1);
       gfx.fillRect(3, 12, w - 6, 8);
@@ -349,7 +413,6 @@ export class BootScene extends Phaser.Scene {
       gfx.fillRoundedRect(1, 16, w - 2, h - 16, 3);
       gfx.lineStyle(2, t.trimColor, 1);
       gfx.strokeRoundedRect(1, 16, w - 2, h - 16, 3);
-      // Raised open lid
       gfx.fillStyle(t.bodyColor, 0.9);
       gfx.fillRoundedRect(2, 1, w - 4, 10, { tl: 6, tr: 6, bl: 2, br: 2 });
       gfx.strokeRoundedRect(2, 1, w - 4, 10, { tl: 6, tr: 6, bl: 2, br: 2 });
@@ -359,7 +422,6 @@ export class BootScene extends Phaser.Scene {
   }
 
   createPuffAndFlashTextures() {
-    // Soft particle circle (tinted dynamically for double jump puffs and chest bursts)
     const pSize = BALANCE.PUFF_FX.PARTICLE_SIZE;
     const pHalf = pSize / 2;
     let gfx = this.make.graphics({ x: 0, y: 0, add: false });
@@ -370,7 +432,6 @@ export class BootScene extends Phaser.Scene {
     gfx.generateTexture('puff_particle', pSize, pSize);
     gfx.destroy();
 
-    // Chest light flash burst
     const fSize = BALANCE.CHESTS.FLASH_SIZE;
     const fHalf = fSize / 2;
     gfx = this.make.graphics({ x: 0, y: 0, add: false });

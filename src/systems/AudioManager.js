@@ -64,6 +64,18 @@ export class AudioManager {
     this._triggerHook('room_transition');
   }
 
+  playEnemyTelegraph() {
+    this._triggerHook('enemy_telegraph');
+  }
+
+  playEnemyShoot() {
+    this._triggerHook('enemy_shoot');
+  }
+
+  playChargerDash() {
+    this._triggerHook('charger_dash');
+  }
+
   playEnemyHit() {
     this._triggerHook('enemy_hit');
   }

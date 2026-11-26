@@ -65,6 +65,18 @@ export const BALANCE = {
     DEPTH: 100
   },
 
+  LOS: {
+    RECT_SHRINK_PX: 2,
+    RAY_OFFSET_RATIO: 1 / 3,
+    OUTER_WALL_THICKNESS: 64,
+    DEBUG_NEAREST_COUNT: 3,
+    DEBUG_CLEAR_COLOR: 0x52b788,
+    DEBUG_BLOCKED_COLOR: 0xef476f,
+    DEBUG_LINE_WIDTH: 2,
+    DEBUG_ALPHA: 0.85,
+    DEBUG_DEPTH: 60
+  },
+
   ROOMS: {
     GROUND: {
       x: 640,
@@ -74,16 +86,12 @@ export const BALANCE = {
       topHeight: 6
     },
     PLATFORM_TOP_HEIGHT: 4,
-    TREASURE_EVERY: 5,
     PALETTE_ROOMS_CYCLE: 10,
     BASE_ENEMY_QUOTA: 3,
     QUOTA_DEPTH_FACTOR: 0.6,
     BASE_MAX_ALIVE: 4,
     MAX_ALIVE_DEPTH_DIVISOR: 4,
     MAX_ALIVE_CAP: 12,
-    COMBAT_CHEST_CHANCE: 0.30,
-    TREASURE_CHEST_MIN: 1,
-    TREASURE_CHEST_MAX: 3,
     CLEAR_MAGNET_DURATION_MS: 1500,
     FADE_OUT_MS: 200,
     FADE_IN_MS: 200,
@@ -269,6 +277,19 @@ export const BALANCE = {
     DEPTH: 35
   },
 
+  ENEMY_PROJECTILES: {
+    MAX_ACTIVE: 20,
+    POOL_INITIAL: 10,
+    SPEED: 320,
+    LIFETIME_MS: 3000,
+    WALL_HIT_PAD: 8,
+    WIDTH: 22,
+    HEIGHT: 8,
+    SHAFT_COLOR: 0xffccd5,
+    HEAD_COLOR: 0xff4d6d,
+    DEPTH: 36
+  },
+
   WEAPONS_DROP: {
     ENEMY_DROP_CHANCE: 0.10,
     PICKUP_COOLDOWN_MS: 1500,
@@ -296,19 +317,15 @@ export const BALANCE = {
     DEPTH: 30
   },
 
+  // As of M5B, chests no longer spawn randomly inside combat or treasure rooms;
+  // kept for debug C key and upcoming Merchant stock (M5E).
   CHESTS: {
-    MAX_ACTIVE: 3,
     DEBUG_MAX_ACTIVE: 3,
     OPEN_RADIUS: 70,
-    DEPTH_PRICE_FACTOR: 0.10,
     WIDTH: 46,
     HEIGHT: 36,
-    EDGE_MARGIN: 44,
-    GROUND_SAFE_X: 180,
-    MAX_PLACE_ATTEMPTS: 16,
     DEBUG_OFFSET_X: 78,
     DEBUG_CLAMP_X: 160,
-    MIN_CHEST_SPACING: 110,
     SHAKE_DURATION_MS: 400,
     SHAKE_AMPLITUDE_X: 4,
     SHAKE_SPEED: 0.075,
@@ -336,16 +353,6 @@ export const BALANCE = {
       weapon: 45,
       passive: 40,
       consumable: 15
-    },
-    COMBAT_TIER_WEIGHTS: {
-      wooden: 70,
-      silver: 25,
-      golden: 5
-    },
-    TREASURE_TIER_WEIGHTS: {
-      wooden: 20,
-      silver: 55,
-      golden: 25
     },
     TIER_ORDER: ['wooden', 'silver', 'golden'],
     TIERS: {
@@ -505,7 +512,6 @@ export const BALANCE = {
     INITIAL_SPAWN_DELAY_MS: 350,
     SPAWN_INTERVAL_MS: 1400,
     MIN_PLAYER_DISTANCE: 180,
-    SLIME_CHANCE: 0.55,
     PLATFORM_EDGE_MARGIN: 28,
     GROUND_MIN_SPAWN_X: 180,
     GROUND_MAX_SPAWN_X: 1120,
@@ -522,7 +528,13 @@ export const BALANCE = {
     WARNING_MAX_SCALE: 1.2,
     MAX_SPAWN_ATTEMPTS: 14,
     FALLBACK_SPAWN_X: 960,
-    FALLBACK_SPAWN_Y: 200
+    FALLBACK_SPAWN_Y: 200,
+    ENEMY_POOL: [
+      { type: 'slime', minDepth: 0, weight: 40 },
+      { type: 'bat', minDepth: 0, weight: 25 },
+      { type: 'archer', minDepth: 2, weight: 20 },
+      { type: 'charger', minDepth: 4, weight: 15 }
+    ]
   },
 
   COMBAT: {
@@ -598,7 +610,6 @@ export const BALANCE = {
     ROOM_FONT_SIZE: '28px',
     TEXT_COLOR: '#ffffff',
     GOLD_TEXT_COLOR: '#ffd166',
-    TREASURE_BANNER_COLOR: '#ffd166',
     BANNER_FONT_SIZE: '44px',
     BANNER_Y: 205,
     BANNER_DURATION_MS: 1500,
@@ -703,8 +714,8 @@ export const BALANCE = {
     TEXT_COLOR: '#80ffdb',
     BG_COLOR: '#0d0d16cc',
     BTN_Y: 292,
-    BTN_WIDTH: 122,
-    BTN_HEIGHT: 38,
+    BTN_WIDTH: 118,
+    BTN_HEIGHT: 36,
     BTN_GAP_X: 8,
     BTN_GAP_Y: 6,
     BTN_RADIUS: 8,
@@ -715,6 +726,7 @@ export const BALANCE = {
     BTN_WEAPON_LABEL: '+WPN (G)',
     BTN_CHEST_LABEL: '+CHEST (C)',
     BTN_GOLD_LABEL: '+100G (V)',
-    BTN_NEXT_LABEL: 'CLEAR (N)'
+    BTN_NEXT_LABEL: 'CLEAR (N)',
+    BTN_LOS_LABEL: 'LOS (L)'
   }
 };

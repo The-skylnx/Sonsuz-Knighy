@@ -36,12 +36,8 @@ export class UIScene extends Phaser.Scene {
 
     this.bindCompareKeys();
 
-    // Show initial room banner if GameScene already loaded its starting room
     if (this.gameScene && this.gameScene.roomManager) {
-      this.showRoomBanner(
-        this.gameScene.roomManager.roomNumber,
-        this.gameScene.roomManager.roomType
-      );
+      this.showRoomBanner(this.gameScene.roomManager.roomNumber);
     }
   }
 
@@ -122,15 +118,10 @@ export class UIScene extends Phaser.Scene {
     this.bannerText.setVisible(false);
   }
 
-  showRoomBanner(roomNumber, roomType) {
+  showRoomBanner(roomNumber) {
     const h = BALANCE.HUD;
-    if (roomType === 'treasure') {
-      this.bannerText.setText('Treasure Room');
-      this.bannerText.setColor(h.TREASURE_BANNER_COLOR);
-    } else {
-      this.bannerText.setText(`Room ${roomNumber}`);
-      this.bannerText.setColor(h.TEXT_COLOR);
-    }
+    this.bannerText.setText(`Room ${roomNumber}`);
+    this.bannerText.setColor(h.TEXT_COLOR);
     this.bannerText.setAlpha(1);
     this.bannerText.setScale(1);
     this.bannerText.setVisible(true);
@@ -716,6 +707,10 @@ export class UIScene extends Phaser.Scene {
       {
         label: d.BTN_NEXT_LABEL,
         onTap: () => this.gameScene && this.gameScene.debugClearRoom()
+      },
+      {
+        label: d.BTN_LOS_LABEL,
+        onTap: () => this.gameScene && this.gameScene.toggleLosDebug()
       }
     ];
 
@@ -838,14 +833,14 @@ export class UIScene extends Phaser.Scene {
       const vy = player.body ? Math.round(player.body.velocity.y) : 0;
       const enemies = this.gameScene.getAliveEnemyCount();
       const coins = this.gameScene.getActiveCoinCount();
-      const chests = this.gameScene.activeChests.length;
+      const losStr = this.gameScene.showLosDebug ? 'ON' : 'OFF';
 
       this.debugText.setText(
-        `FPS: ${fps} | Touch: ${touchCount}\n` +
-        `Room: ${rm.roomNumber} (Depth: ${rm.depth}) [${rm.roomType}]\n` +
+        `FPS: ${fps} | Touch: ${touchCount} | LoS: ${losStr}\n` +
+        `Room: ${rm.roomNumber} (Depth: ${rm.depth})\n` +
         `Vel: (${vx}, ${vy})\n` +
         `Enemies: ${enemies} (+${rm.enemiesToSpawn} left)\n` +
-        `Coins: ${coins} | Chests: ${chests}`
+        `Coins: ${coins}`
       );
     }
   }

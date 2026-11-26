@@ -1,7 +1,5 @@
 import { BALANCE } from '../config/balance.js';
 import { ROOM_TEMPLATES } from '../data/roomTemplates.js';
-import { Chest } from '../entities/Chest.js';
-import { rollChestTierByWeights } from './LootSystem.js';
 
 export class RoomManager {
   constructor(scene, staticPlatformGroup) {
@@ -10,7 +8,9 @@ export class RoomManager {
 
     this.roomNumber = 1;
     this.depth = 0;
-    this.roomType = 'combat'; // 'combat' | 'treasure'
+    this.roomType = 'combat';
+    this.roomWidth = BALANCE.GAME.WIDTH;
+    this.roomHeight = BALANCE.GAME.HEIGHT;
     this.currentTemplate = null;
     this.lastTemplateId = null;
 
@@ -22,6 +22,7 @@ export class RoomManager {
 
     this.platformBounds = [];
     this.spawnSurfaces = [];
+    this.losObstacles = [];
     this.roomVisuals = [];
 
     this.doorPulseTime = 0;
@@ -105,7 +106,6 @@ export class RoomManager {
         { tl: 18, tr: 18, bl: 0, br: 0 }
       );
 
-      // Small right-pointing arrow inside open doorway
       this.exitArrowGfx.fillStyle(rCfg.OPEN_GLOW_COLOR, 1);
       this.exitArrowGfx.fillTriangle(-7, -11, -7, 11, 10, 0);
     } else {
@@ -128,7 +128,6 @@ export class RoomManager {
         { tl: 18, tr: 18, bl: 0, br: 0 }
       );
 
-      // Locked iron bars
       this.exitDoorGfx.lineStyle(3, rCfg.LOCKED_COLOR, 0.85);
       this.exitDoorGfx.lineBetween(-10, -hh + 6, -10, hh);
       this.exitDoorGfx.lineBetween(0, -hh + 3, 0, hh);
@@ -162,7 +161,6 @@ export class RoomManager {
   }
 
   teardownCurrentRoom() {
-    // Clear reusable static physics group and destroy platform rectangles without touching colliders
     this.platforms.clear(true, true);
 
     for (let i = 0; i < this.roomVisuals.length; i++) {
@@ -171,6 +169,26 @@ export class RoomManager {
     this.roomVisuals.length = 0;
     this.platformBounds.length = 0;
     this.spawnSurfaces.length = 0;
+    this.losObstacles.length = 0;
+  }
+
+  rebuildLosObstacles() {
+    const wt = BALANCE.LOS.OUTER_WALL_THICKNESS;
+    const w = this.roomWidth;
+    const h = this.roomHeight;
+
+    this.losObstacles.length = 0;
+    for (let i = 0; i < this.platformBounds.length; i++) {
+      this.losObstacles.push(this.platformBounds[i]);
+    }
+
+    // Outer room boundary walls (supports any room width/height)
+    this.losObstacles.push(
+      { left: -wt, right: 0, top: -wt, bottom: h + wt },
+      { left: w, right: w + wt, top: -wt, bottom: h + wt },
+      { left: -wt, right: w + wt, top: -wt, bottom: 0 },
+      { left: -wt, right: w + wt, top: h, bottom: h + wt }
+    );
   }
 
   buildRoom(roomNumber) {
@@ -179,8 +197,9 @@ export class RoomManager {
 
     this.roomNumber = roomNumber;
     this.depth = Math.max(0, roomNumber - 1);
-    this.roomType =
-      roomNumber % rCfg.TREASURE_EVERY === 0 ? 'treasure' : 'combat';
+    this.roomType = 'combat';
+    this.roomWidth = BALANCE.GAME.WIDTH;
+    this.roomHeight = BALANCE.GAME.HEIGHT;
 
     const palette = this.getPaletteForRoom(roomNumber);
     this.scene.applyThemePalette(palette);
@@ -215,29 +234,17 @@ export class RoomManager {
       );
     }
 
+    this.rebuildLosObstacles();
+
     this.clearMagnetTimerMs = 0;
-
-    if (this.roomType === 'treasure') {
-      this.enemiesToSpawn = 0;
-      this.maxAliveEnemies = 0;
-      this.isCleared = true;
-      this.isExitOpen = true;
-      this.spawnTreasureRoomChests();
-    } else {
-      this.enemiesToSpawn =
-        rCfg.BASE_ENEMY_QUOTA + Math.floor(this.depth * rCfg.QUOTA_DEPTH_FACTOR);
-      this.maxAliveEnemies = Math.min(
-        rCfg.MAX_ALIVE_CAP,
-        rCfg.BASE_MAX_ALIVE +
-          Math.floor(this.depth / rCfg.MAX_ALIVE_DEPTH_DIVISOR)
-      );
-      this.isCleared = false;
-      this.isExitOpen = false;
-
-      if (Math.random() < rCfg.COMBAT_CHEST_CHANCE) {
-        this.spawnRoomChest(BALANCE.CHESTS.COMBAT_TIER_WEIGHTS);
-      }
-    }
+    this.enemiesToSpawn =
+      rCfg.BASE_ENEMY_QUOTA + Math.floor(this.depth * rCfg.QUOTA_DEPTH_FACTOR);
+    this.maxAliveEnemies = Math.min(
+      rCfg.MAX_ALIVE_CAP,
+      rCfg.BASE_MAX_ALIVE + Math.floor(this.depth / rCfg.MAX_ALIVE_DEPTH_DIVISOR)
+    );
+    this.isCleared = false;
+    this.isExitOpen = false;
 
     this.refreshExitDoorVisual();
   }
@@ -267,65 +274,6 @@ export class RoomManager {
       topColor
     );
     this.roomVisuals.push(topStrip);
-  }
-
-  spawnTreasureRoomChests() {
-    const rCfg = BALANCE.ROOMS;
-    const count = Phaser.Math.Between(
-      rCfg.TREASURE_CHEST_MIN,
-      rCfg.TREASURE_CHEST_MAX
-    );
-    for (let i = 0; i < count; i++) {
-      this.spawnRoomChest(BALANCE.CHESTS.TREASURE_TIER_WEIGHTS);
-    }
-  }
-
-  spawnRoomChest(tierWeights) {
-    const cCfg = BALANCE.CHESTS;
-    const elevated = this.spawnSurfaces.filter((s) => !s.isGround);
-    const pool = elevated.length > 0 ? elevated : this.spawnSurfaces;
-    const minSpacingSq = cCfg.MIN_CHEST_SPACING * cCfg.MIN_CHEST_SPACING;
-
-    let chosenX = BALANCE.GAME.WIDTH / 2;
-    let chosenY =
-      BALANCE.ROOMS.GROUND.y -
-      BALANCE.ROOMS.GROUND.height / 2 -
-      cCfg.HEIGHT / 2;
-
-    for (let attempt = 0; attempt < cCfg.MAX_PLACE_ATTEMPTS; attempt++) {
-      const surface = pool[Phaser.Math.Between(0, pool.length - 1)];
-      const minX = Math.max(cCfg.GROUND_SAFE_X, surface.left + cCfg.EDGE_MARGIN);
-      const maxX = Math.min(
-        BALANCE.GAME.WIDTH - cCfg.GROUND_SAFE_X,
-        surface.right - cCfg.EDGE_MARGIN
-      );
-      if (maxX < minX) {
-        continue;
-      }
-
-      const x = Phaser.Math.Between(Math.round(minX), Math.round(maxX));
-      const y = surface.top - cCfg.HEIGHT / 2;
-      chosenX = x;
-      chosenY = y;
-
-      let tooClose = false;
-      for (let i = 0; i < this.scene.activeChests.length; i++) {
-        const other = this.scene.activeChests[i];
-        const dx = other.x - x;
-        const dy = other.y - y;
-        if (dx * dx + dy * dy < minSpacingSq) {
-          tooClose = true;
-          break;
-        }
-      }
-      if (!tooClose) {
-        break;
-      }
-    }
-
-    const tierId = rollChestTierByWeights(tierWeights);
-    const chest = new Chest(this.scene, chosenX, chosenY, tierId, this.depth);
-    this.scene.activeChests.push(chest);
   }
 
   onCombatRoomCleared() {

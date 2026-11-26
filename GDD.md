@@ -1,6 +1,6 @@
 # GAME DESIGN DOCUMENT: Sonsuz Yankı
 
-Version: 0.4 (M1-M5A complete, M5B next)
+Version: 0.5 (M1-M5B complete, M5C next)
 Engine/Stack: HTML5 + Phaser 3 (CDN), vanilla JS (ES modules), no build step required
 Primary targets: phones and tablets (landscape), desktop browser as secondary
 
@@ -11,16 +11,16 @@ Primary targets: phones and tablets (landscape), desktop browser as secondary
 ## 0. Project Status and Implementation Notes
 
 - **Game name:** Sonsuz Yankı.
-- **M1 Foundation: DONE. M2 Combat core: DONE. M3 Weapons: DONE. M4 Chests and passives: DONE. M5A Endless rooms: DONE.** Do not rewrite these systems; extend them.
-- **Scenes:** BootScene (placeholder textures), GameScene (gameplay + fast 400 ms room transitions), UIScene (HUD + top-center `"Room N"` + 1.5 s room banner + weapon compare modal + passive icon row + Rage buff timer, runs in parallel with GameScene), GameOverScene (`"Room reached: N"`, 500 ms input lock, resets run to Room 1).
-- **Entities:** Player (central `player.stats` and Spring Shoes double jump), Enemy (Slime, Bat, depth-scaled HP/damage/gold, `knockbackTimer` and Burn DoT), Chest (Wooden, Silver, Golden, depth-scaled price), Coin, WeaponPickup, ItemPickup, Projectile (arrows & orbs collide with platforms/walls; boomerangs pass through). **Systems:** TouchControls, AutoAttack (melee + ranged), RoomManager (reusable static platform group, entry/exit doors, Combat & Treasure rooms, 4 cycling palettes every 10 rooms), LootSystem (`createWeaponInstance`, `rollChestTier`, `rollChestTierByWeights`, `rollChestLoot`), ObjectPool (`releaseAll` on room teardown), AudioManager (no-op stub until M6).
-- **Data:** `src/data/weapons.js` (all 6 weapons), `src/data/passives.js` (all 9 passives), `src/data/enemies.js`, `src/data/roomTemplates.js` (10 validated templates + `validateRoomTemplates()`). All numbers live in `src/config/balance.js`.
+- **M1 Foundation: DONE. M2 Combat core: DONE. M3 Weapons: DONE. M4 Chests and passives: DONE. M5A Endless rooms: DONE. M5B Line of sight, enemy variety, chest cleanup: DONE.** Do not rewrite these systems; extend them.
+- **Scenes:** BootScene (placeholder textures), GameScene (gameplay + fast 400 ms room transitions + Line of Sight combat checks), UIScene (HUD + top-center `"Room N"` + 1.5 s room banner + weapon compare modal + passive icon row + Rage buff timer, runs in parallel with GameScene), GameOverScene (`"Room reached: N"`, 500 ms input lock, resets run to Room 1).
+- **Entities:** Player (central `player.stats` and Spring Shoes double jump), Enemy (Slime, Bat, Archer, Charger; depth-scaled HP/damage/gold, `knockbackTimer` and Burn DoT), Chest (Wooden, Silver, Golden, kept for debug `C` and M5E Merchant), Coin, WeaponPickup, ItemPickup, Projectile & EnemyProjectile (pooled player projectiles max 30 + pooled Archer arrows max 20; arrows & orbs vanish on platforms/walls, boomerangs switch to return leg on platform/wall hit). **Systems:** TouchControls, AutoAttack (melee + ranged, 3-ray LoS gated), LineOfSight (Liang-Barsky segment-vs-AABB with 2 px shrink, room-size agnostic), RoomManager (reusable static platform group, `losObstacles`, entry/exit doors, 4 cycling palettes every 10 rooms), LootSystem (`createWeaponInstance`, `rollChestTier`, `rollChestTierByWeights`, `rollChestLoot`), ObjectPool (`releaseAll` on room teardown), AudioManager (no-op stub until M6).
+- **Data:** `src/data/weapons.js` (all 6 weapons), `src/data/passives.js` (all 9 passives), `src/data/enemies.js` (Slime, Bat, Archer, Charger), `src/data/roomTemplates.js` (10 validated templates + `validateRoomTemplates()`). All numbers live in `src/config/balance.js`.
 - **Player values in use:** Max HP 100, move speed 240, `MAX_VELOCITY_X` 900, invulnerability 800 ms after hit (1000 ms on room entry), spawn X 88 next to left entry door, central `player.stats` modifier computation so `balance.js` is never mutated.
-- **Rooms & Spawner in use:** `depth = roomNumber - 1`; Combat rooms (`3 + floor(depth * 0.6)` quota, `min(12, 4 + floor(depth / 4))` max alive, 0.5 s warning marker, 30% chance of 1 chest with weights 70/25/5, 1.5 s coin magnet sweep on clear before unlocking green exit door) and Treasure rooms every 5th room (1-3 chests with weights 20/55/25, exit door open from start).
-- **Gold & Chests in use:** coin value 1, 3-6 base coins per kill scaled by `(1 + 0.06 * depth)` and Greedy Coin, magnet radius 80 (extended by Magnet Ring), max 60 active coins; 3 chest tiers (base 30/80/200 scaled by `1 + 0.10 * depth`) auto-opening within 70 px with 400 ms shake -> flash/burst -> 45% weapon / 40% passive / 15% consumable (Heal Orb, Rage Orb).
-- **Weapons in use:** 5 rarities (Common to Legendary), depth-scaled damage (`1 + 0.08 * depth`), 3 M3 affixes (Burn, Knockback, Crit), 10% enemy weapon drop chance, 1.5 s ground pickup cooldown, pooled projectiles (max 30), pooled weapon/item pickups and FX, active weapon icon with rarity frame + stacked passive icon row under HP bar.
-- **Debug:** open with `?debug=1` (runs `validateRoomTemplates()` once at startup; shows FPS, touch pointers, room/depth/type, velocity, enemy/quota, coin, and chest counts; keys/buttons `G` drop weapon, `C` spawn chest, `V` +100 gold, `N` clear room & open exit door) and `?room=15` to start at Room 15.
-- **Known simplifications (fine for now):** audio is a stub, enemies are not pooled (max alive capped at 12), Archer/Charger/Elite/Boss/Rest rooms arrive in M5B.
+- **Rooms & Spawner in use:** `depth = roomNumber - 1`; all rooms are Combat rooms in M5B (`3 + floor(depth * 0.6)` quota, `min(12, 4 + floor(depth / 4))` max alive, 0.5 s warning marker, 1.5 s coin magnet sweep on clear before unlocking green exit door). Treasure rooms and random room chests are removed. Depth-gated spawn weights: Slime 40 (depth 0+), Bat 25 (depth 0+), Archer 20 (depth 2+), Charger 15 (depth 4+).
+- **Gold & Chests in use:** coin value 1, enemy gold scaled by `(1 + 0.06 * depth)` and Greedy Coin, magnet radius 80 (extended by Magnet Ring), max 60 active coins; Chest entity & loot tables (`45%` weapon / `40%` passive / `15%` consumable) preserved for debug `C` and M5E Merchant.
+- **Weapons in use:** 5 rarities (Common to Legendary), depth-scaled damage (`1 + 0.08 * depth`), 3 M3 affixes (Burn, Knockback, Crit), 10% enemy weapon drop chance, 1.5 s ground pickup cooldown, active weapon icon with rarity frame + stacked passive icon row under HP bar.
+- **Debug:** open with `?debug=1` (runs `validateRoomTemplates()` once; shows FPS, touch pointers, LoS state, room/depth, velocity, enemy/quota, and coin counts; keys/buttons `G` drop weapon, `C` spawn chest, `V` +100 gold, `N` clear room & open exit door, `L` toggle green/red 3-ray LoS lines to 3 nearest enemies) and `?room=15` to start at Room 15.
+- **Known simplifications (fine for now):** audio is a stub, enemies are not pooled (max alive capped at 12), Descent/Boss/Merchant arrive in M5C-M5E.
 
 ---
 
@@ -149,15 +149,15 @@ All enemies drop gold on death. Stats scale with room depth: `hp *= 1 + 0.12 * d
 
 Enemy spawn count per room: `3 + floor(depth * 0.6)` capped at 12 alive. Spawn with a short 0.5s warning marker so players are never hit by spawns.
 
-### Bosses (every 10th room)
-Large enemy with 2-3 simple attack patterns (dash, projectile fan, ground slam shockwave). Guaranteed Epic+ chest on defeat. One boss design in v1, more later.
+### Bosses (position 10 of every stage)
+Large enemy fought in a single-screen arena with platforms. A big boss health bar is shown at the top of the screen. The fight is meant to be HARD: the player must jump between platforms and dodge. Attack patterns (details in M5D): ground slam shockwave (jump over it or stand on a platform), projectile fan, charge dash across the arena, with more aggressive phases at 66 percent and 33 percent health. Before the boss, the player fights the boss's men in the Descent room (see section 10). Defeating the boss drops a big gold burst and opens the way to the Merchant. One boss design in v1, more later.
 
 ---
 
 ## 8. Gold and Chests
 
 - Enemies drop gold coins that pop outward with physics, then magnetize to the player inside the magnet radius. Coin sound pitch rises with quick consecutive pickups.
-- Gold is spent ONLY on chests (and later, shop).
+- Gold is spent ONLY at the Merchant after each boss (chests, weapons, consumables). Chests no longer spawn inside rooms.
 
 ### Chest tiers
 | Chest | Base price | Loot quality |
@@ -194,15 +194,15 @@ Show picked-up passives as small icons in a row under the HUD.
 
 ## 10. Dungeon Structure
 
-- The dungeon is a sequence of single-screen rooms (1280x720). Depth counter increases forever ("Room 37").
-- Room types:
-  - **Combat room** (most common): enemies spawn, doors lock until cleared.
-  - **Treasure room** (every ~5th): 1-3 chests, no enemies.
-  - **Boss room** (every 10th).
-  - **Rest room** (after boss): free heal + 1 free chest.
-- Rooms are built from hand-authored **layout templates** (arrays of platform rectangles) chosen randomly, with random spawn points. 8-10 templates in v1. Templates must ensure every platform is reachable with a single jump.
-- Visual theme changes every 10 rooms (tint/palette swap), mechanics unchanged.
-- Transition between rooms: quick fade, 0.4s, player spawns at the left door.
+- A run is a sequence of **Stages**. Each stage has 10 numbered rooms. The room number N keeps counting forever ("Room 37"). `depth = N - 1`, `stage = floor((N - 1) / 10) + 1`, `position = ((N - 1) % 10) + 1`.
+- **Positions 1-8: Combat rooms.** Single-screen rooms (1280x720) built from hand-authored templates; the exit door stays locked until all enemies are dead.
+- **Position 9: Descent room.** A tall vertical room, 5 floors high (5 x 720 px). The player descends floor by floor through gaps and drops between platforms (no fall damage); the camera follows the player vertically. Floors 1-4 hold a few enemies each (2 per floor, they do not block progress). The bottom floor is the boss's lair: the player fights the boss's men in **3 waves of 3 enemies**; the next wave starts when the previous one is dead. After wave 3 an exit opens that leads to the boss arena. There is no way back up.
+- **Position 10: Boss room.** Single-screen arena with platforms, one boss, a boss health bar at the top, high difficulty (jump between platforms, dodge attacks).
+- **Merchant room (after every boss).** Not a numbered room. The Merchant sells chests, weapons and consumables for gold. Leaving it starts the next stage (room 11, 21, ...).
+- **No treasure rooms, no rest rooms, and no chests inside rooms.** Chests exist only as Merchant stock (and with the debug key).
+- Rooms are built from hand-authored **layout templates** (arrays of platform rectangles) chosen randomly, with random spawn points. Templates must ensure every platform is reachable with a single jump.
+- Visual theme (palette) changes every stage, mechanics unchanged.
+- Transition between rooms: quick fade, under 0.5 s, player spawns at the left door (or at the top of the Descent room).
 
 ---
 
@@ -294,7 +294,14 @@ Show picked-up passives as small icons in a row under the HUD.
 **M5A - Endless rooms (DONE):** RoomManager, room templates, door lock/unlock, room transitions, depth scaling, treasure rooms, room counter in the HUD, projectile-vs-platform collisions.
 *Done when:* a run can continue past Room 20 with rising difficulty and no errors or memory growth.
 
-**M5B - New enemies and boss (NEXT):** Archer, Charger, Elite enemies, first boss on every 10th room, rest room after each boss. (Spec is written after M5A is done.)
+**M5B - Line of sight, enemy variety, chest cleanup (DONE):** attacks never hit through platforms or walls, remove chests and treasure rooms from rooms, add Archer and Charger enemies.
+*Done when:* nothing can be hit through a platform, Archer and Charger appear by depth, and rooms no longer contain chests.
+
+**M5C - Descent room (position 9) (NEXT):** stage structure (positions 1-10), tall 5-floor room with vertical camera, 3 waves of 3 enemies at the bottom. (Spec is written after M5B is done.)
+
+**M5D - Boss fight (position 10):** boss arena, boss health bar, attack patterns and phases. (Spec is written after M5C is done.)
+
+**M5E - Merchant:** Merchant room after each boss selling chests, weapons and consumables. (Spec is written after M5D is done.)
 
 **M6 - Meta + polish:** Shards, permanent upgrades, save system, menu, settings, juice pass, AudioManager, PWA.
 *Done when:* full loop works: run -> die -> upgrade -> run again; installable on phone.
@@ -345,6 +352,8 @@ Show picked-up passives as small icons in a row under the HUD.
 
 ### 15.3 M5A detailed spec (Endless rooms)
 
+> Note: Treasure rooms and chests inside rooms from this spec are REMOVED in M5B. The stage structure in section 10 replaces the "every 5th room" rule.
+
 - **Depth:** room number N starts at 1 and increases forever; `depth = N - 1`. Depth drives all scaling. For testing, `?room=15` in the URL starts the run at room 15 (works together with `?debug=1`).
 - **RoomManager** (`src/systems/RoomManager.js`): builds the current room from a template, tears down the previous room completely, and owns room state (type, enemies still to spawn, cleared flag, doors). Colliders are created once against a reusable static platform group; clear the group between rooms instead of creating new colliders, so nothing leaks.
 - **Room templates** (`src/data/roomTemplates.js`): 8 to 10 hand-authored templates, each an array of platforms `{ x, y, width, height }` in the 1280x720 room. A full-width ground is always present. Rules every template must follow: vertical step between platforms that must be reached is at most 95 px (max jump height is 112 px), horizontal gaps are at most 150 px, no platform may sit in the door areas (x < 150 or x > 1130, within 220 px above the ground), and no platform may block the way from the left door to the right door. Add `validateRoomTemplates()` that checks the step and door rules and prints `console.warn` messages; run it once at startup when `?debug=1` is set.
@@ -361,6 +370,23 @@ Show picked-up passives as small icons in a row under the HUD.
 - **Cleanup on every transition:** deactivate all projectiles, coins, weapon pickups, chests, burn effects, damage numbers and pending warnings; destroy room platform objects; regenerate `platformBounds` and `spawnSurfaces` used by Slime patrol and the spawner. Player stats, weapon, passives, buffs and gold carry over.
 - **HUD:** "Room N" at the top center of UIScene. At the start of each room show a 1.5 s banner ("Room 7", or "Treasure Room"). The Game Over screen shows "Room reached: N". Restart resets the run to room 1 with all run state reset.
 - **Debug (`?debug=1`):** `N` key (and a small on-screen DEBUG button) clears the room and opens the door immediately; the debug overlay also shows the room number and depth.
+
+### 15.4 M5B detailed spec (Line of sight, Archer, Charger, chest cleanup)
+
+- **Line of sight system** (`src/systems/LineOfSight.js`): a function that tests a segment against the rectangles of every platform and wall of the current room (take them from RoomManager; write it so it works for any room size, because the Descent room is taller). Shrink each rectangle by 2 px so corners do not cause false blocks. An enemy counts as **visible** if at least one of 3 rays is clear: to its center, its upper third, or its lower third.
+- **Rules:**
+  1. Auto-target selection ignores enemies that are not visible (no swinging at, or shooting at, hidden enemies).
+  2. Melee damage (including the cleave of the sword and axe) applies only to enemies that are visible from the player, checked per enemy.
+  3. A projectile hit needs a clear line between the projectile center and the enemy center at the moment of the hit. Arrows and orbs already vanish on platforms. A boomerang that touches a platform or wall immediately switches to its return leg (small spark), and on the return leg it too needs the clear line to damage anything.
+  4. Burn that is already applied keeps ticking. Contact damage and Thorn Armor are unchanged (bodies must touch).
+  5. Enemy ranged attacks (Archer) also need a clear line to the player.
+- **Debug (`?debug=1`):** key `L` toggles drawing rays from the player to the 3 nearest enemies, green when clear and red when blocked.
+- **Chest cleanup:** remove random chests from combat rooms and remove Treasure rooms (rooms 5, 10, 15, ... become normal combat rooms). Keep the Chest entity, the loot tables, the passives and the debug `C` and `V` keys, because the Merchant (M5E) will use them. Remove or mark as unused the treasure and chest-in-room values in balance.js and update README.md.
+- **Archer** (data in `src/data/enemies.js`): stays on its platform, faces the player. If the player is within 520 px and visible, it shows a 0.4 s telegraph (flash) and then fires an arrow every 2 s. HP 18, contact damage 10, gold 6-8.
+- **Charger:** walks slowly toward the player along its platform (speed 70). When the player is within 380 px and visible on a similar height, it telegraphs for 0.5 s (red flash, squash), then dashes horizontally (speed 520, up to 350 px, stops at walls and platform edges), then is stunned for 1 s (takes full damage, does not move). HP 40, contact damage 14, gold 8-12.
+- **Enemy projectiles:** pooled (max 20), speed 320, damage 10 x depth scaling, lifetime 3 s, destroyed on platforms, walls and when they hit the player (the player's invulnerability still applies).
+- **Spawn pool by depth** (weights in balance.js): Slime and Bat always; Archer unlocks at depth 2 (room 3); Charger unlocks at depth 4 (room 5). Example weights: Slime 40, Bat 25, Archer 20, Charger 15 (a locked enemy has weight 0).
+- All new numbers live in balance.js or /data, all new objects are pooled or reused, and all of it is cleaned up on room transitions like in M5A.
 
 ---
 

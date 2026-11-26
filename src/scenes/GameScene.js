@@ -6,10 +6,11 @@ import { Player } from '../entities/Player.js';
 import { Enemy } from '../entities/Enemy.js';
 import { Chest } from '../entities/Chest.js';
 import { Coin, WeaponPickup, ItemPickup } from '../entities/Pickup.js';
-import { Projectile } from '../entities/Projectile.js';
+import { Projectile, EnemyProjectile } from '../entities/Projectile.js';
 import { TouchControls } from '../systems/TouchControls.js';
 import { AutoAttack } from '../systems/AutoAttack.js';
 import { RoomManager } from '../systems/RoomManager.js';
+import { hasLineOfSight, getVisibilityRays } from '../systems/LineOfSight.js';
 import { ObjectPool } from '../systems/ObjectPool.js';
 import { AudioManager } from '../systems/AudioManager.js';
 import {
@@ -52,6 +53,7 @@ export class GameScene extends Phaser.Scene {
     this.isGameOver = false;
     this.isCompareOpen = false;
     this.comparingPickup = null;
+    this.showLosDebug = false;
 
     this.transitionPhase = 'none'; // 'none' | 'fade_out' | 'fade_in'
     this.transitionTimerMs = 0;
@@ -85,6 +87,9 @@ export class GameScene extends Phaser.Scene {
 
     this.roomManager = new RoomManager(this, this.platforms);
     this.autoAttack = new AutoAttack(this, this.player);
+
+    this.losDebugGfx = this.add.graphics();
+    this.losDebugGfx.setDepth(BALANCE.LOS.DEBUG_DEPTH);
 
     this.transitionOverlay = this.add.rectangle(
       BALANCE.GAME.WIDTH / 2,
@@ -122,27 +127,29 @@ export class GameScene extends Phaser.Scene {
     this.bgGridGfx.lineStyle(1, palette.gridColor, gCfg.GRID_ALPHA);
 
     for (let x = 0; x <= gCfg.WIDTH; x += gCfg.GRID_SIZE) {
-      this.bgGridGfx.lineBetween(x, 0, x, gCfg.HEIGHT);
+      gfxLine(this.bgGridGfx, x, 0, x, gCfg.HEIGHT);
     }
     for (let y = 0; y <= gCfg.HEIGHT; y += gCfg.GRID_SIZE) {
-      this.bgGridGfx.lineBetween(0, y, gCfg.WIDTH, y);
+      gfxLine(this.bgGridGfx, 0, y, gCfg.WIDTH, y);
     }
   }
 
   setupEnemyGroups() {
-    this.slimeGroup = this.physics.add.group({
+    // Ground/platform enemies: Slime, Archer, Charger
+    this.groundEnemyGroup = this.physics.add.group({
       collideWorldBounds: true,
       allowGravity: true
     });
+    // Flying enemies: Bat
     this.batGroup = this.physics.add.group({
       collideWorldBounds: true,
       allowGravity: false
     });
 
-    this.physics.add.collider(this.slimeGroup, this.platforms);
+    this.physics.add.collider(this.groundEnemyGroup, this.platforms);
     this.physics.add.overlap(
       this.player,
-      this.slimeGroup,
+      this.groundEnemyGroup,
       this.onPlayerTouchEnemy,
       null,
       this
@@ -160,6 +167,7 @@ export class GameScene extends Phaser.Scene {
     const cCfg = BALANCE.COMBAT;
     const gCfg = BALANCE.GOLD;
     const pCfg = BALANCE.PROJECTILES;
+    const epCfg = BALANCE.ENEMY_PROJECTILES;
     const wCfg = BALANCE.WEAPONS_DROP;
     const iCfg = BALANCE.ITEM_PICKUPS;
     const bCfg = BALANCE.AFFIXES.BURN;
@@ -189,13 +197,13 @@ export class GameScene extends Phaser.Scene {
       gCfg.MAX_ACTIVE_COINS
     );
 
-    // 2. Projectiles pool (capped at 30)
+    // 2. Player projectiles pool (capped at 30)
     this.projectileGroup = this.physics.add.group({
       allowGravity: false
     });
     this.physics.add.overlap(
       this.projectileGroup,
-      this.slimeGroup,
+      this.groundEnemyGroup,
       this.onProjectileOverlapEnemy,
       null,
       this
@@ -207,12 +215,14 @@ export class GameScene extends Phaser.Scene {
       null,
       this
     );
-    // Arrows and magic orbs collide with platforms; boomerangs pass through
+    // Arrows & orbs collide with platforms; outbound boomerangs bounce to return leg
     this.physics.add.collider(
       this.projectileGroup,
       this.platforms,
       this.onProjectileHitPlatform,
-      (proj) => proj.active && proj.behavior !== 'boomerang',
+      (proj) =>
+        proj.active &&
+        (proj.behavior !== 'boomerang' || proj.leg === 'outbound'),
       this
     );
 
@@ -230,7 +240,40 @@ export class GameScene extends Phaser.Scene {
       pCfg.MAX_ACTIVE
     );
 
-    // 3. Ground weapon pickups pool
+    // 3. Enemy projectiles pool (Archer arrows, capped at 20)
+    this.enemyProjectileGroup = this.physics.add.group({
+      allowGravity: false
+    });
+    this.physics.add.collider(
+      this.enemyProjectileGroup,
+      this.platforms,
+      this.onEnemyProjectileHitPlatform,
+      (ep) => ep.active && !ep.hasStopped,
+      this
+    );
+    this.physics.add.overlap(
+      this.player,
+      this.enemyProjectileGroup,
+      this.onPlayerHitByEnemyProjectile,
+      null,
+      this
+    );
+
+    this.enemyProjectilePool = new ObjectPool(
+      () => {
+        const ep = new EnemyProjectile(this);
+        this.enemyProjectileGroup.add(ep);
+        ep.deactivate();
+        return ep;
+      },
+      (ep, x, y, angle, damage) => {
+        ep.spawn(x, y, angle, damage);
+      },
+      epCfg.POOL_INITIAL,
+      epCfg.MAX_ACTIVE
+    );
+
+    // 4. Ground weapon pickups pool
     this.weaponPickupGroup = this.physics.add.group();
     this.physics.add.collider(this.weaponPickupGroup, this.platforms);
 
@@ -248,7 +291,7 @@ export class GameScene extends Phaser.Scene {
       wCfg.MAX_ACTIVE
     );
 
-    // 4. Passive & consumable item pickups pool
+    // 5. Passive & consumable item pickups pool
     this.itemPickupGroup = this.physics.add.group();
     this.physics.add.collider(this.itemPickupGroup, this.platforms);
 
@@ -266,7 +309,7 @@ export class GameScene extends Phaser.Scene {
       iCfg.MAX_ACTIVE
     );
 
-    // 5. Floating damage/heal numbers pool
+    // 6. Floating damage/heal numbers pool
     this.damageTextPool = new ObjectPool(
       () => {
         const txt = this.add.text(0, 0, '', {
@@ -313,7 +356,7 @@ export class GameScene extends Phaser.Scene {
       cCfg.DMG_TEXT_POOL_INITIAL
     );
 
-    // 6. Floating item pickup banner text pool
+    // 7. Floating item pickup banner text pool
     this.statusTextPool = new ObjectPool(
       () => {
         const txt = this.add.text(0, 0, '', {
@@ -347,7 +390,7 @@ export class GameScene extends Phaser.Scene {
       sTxtCfg.POOL_INITIAL
     );
 
-    // 7. Hit spark effects pool
+    // 8. Hit spark effects pool
     this.hitEffectPool = new ObjectPool(
       () => {
         const img = this.add.image(0, 0, 'hit_effect');
@@ -369,7 +412,7 @@ export class GameScene extends Phaser.Scene {
       cCfg.HIT_EFFECT_POOL_INITIAL
     );
 
-    // 8. Burn flame effects pool
+    // 9. Burn flame effects pool
     this.burnEffectPool = new ObjectPool(
       () => {
         const img = this.add.image(0, 0, 'burn_flame');
@@ -391,7 +434,7 @@ export class GameScene extends Phaser.Scene {
       bCfg.FX_POOL_INITIAL
     );
 
-    // 9. Puff & chest burst particle pool
+    // 10. Puff & chest burst particle pool
     this.puffPool = new ObjectPool(
       () => {
         const img = this.add.image(0, 0, 'puff_particle');
@@ -426,7 +469,7 @@ export class GameScene extends Phaser.Scene {
       puffCfg.POOL_INITIAL
     );
 
-    // 10. Chest open flash pool
+    // 11. Chest open flash pool
     this.chestFlashPool = new ObjectPool(
       () => {
         const img = this.add.image(0, 0, 'chest_flash');
@@ -447,7 +490,7 @@ export class GameScene extends Phaser.Scene {
       3
     );
 
-    // 11. Melee arc swing visuals pool
+    // 12. Melee arc swing visuals pool
     this.swingPool = new ObjectPool(
       () => {
         const img = this.add.image(0, 0, 'sword_arc');
@@ -486,6 +529,7 @@ export class GameScene extends Phaser.Scene {
   cleanupRoomTransientObjects() {
     this.coinPool.releaseAll((c) => c.deactivate());
     this.projectilePool.releaseAll((p) => p.deactivate());
+    this.enemyProjectilePool.releaseAll((ep) => ep.deactivate());
     this.weaponPickupPool.releaseAll((w) => w.deactivate());
     this.itemPickupPool.releaseAll((i) => i.deactivate());
 
@@ -505,6 +549,10 @@ export class GameScene extends Phaser.Scene {
     this.puffPool.releaseAll(hideImg);
     this.chestFlashPool.releaseAll(hideImg);
     this.swingPool.releaseAll(hideImg);
+
+    if (this.losDebugGfx) {
+      this.losDebugGfx.clear();
+    }
 
     for (let i = 0; i < this.activeChests.length; i++) {
       this.activeChests[i].destroy();
@@ -539,10 +587,7 @@ export class GameScene extends Phaser.Scene {
 
     const uiScene = this.scene.get('UIScene');
     if (uiScene && uiScene.scene.isActive()) {
-      uiScene.showRoomBanner(
-        this.roomManager.roomNumber,
-        this.roomManager.roomType
-      );
+      uiScene.showRoomBanner(this.roomManager.roomNumber);
     }
   }
 
@@ -580,8 +625,6 @@ export class GameScene extends Phaser.Scene {
     if (this.transitionPhase === 'fade_in') {
       const t = Math.min(1, this.transitionTimerMs / rCfg.FADE_IN_MS);
       this.transitionOverlay.setAlpha(1 - t);
-
-      // Keep player controls responsive during fade-in while spawner stays paused
       this.player.update(delta, inputState);
 
       if (this.transitionTimerMs >= rCfg.FADE_IN_MS) {
@@ -612,8 +655,56 @@ export class GameScene extends Phaser.Scene {
       g: Phaser.Input.Keyboard.KeyCodes.G,
       c: Phaser.Input.Keyboard.KeyCodes.C,
       v: Phaser.Input.Keyboard.KeyCodes.V,
-      n: Phaser.Input.Keyboard.KeyCodes.N
+      n: Phaser.Input.Keyboard.KeyCodes.N,
+      l: Phaser.Input.Keyboard.KeyCodes.L
     });
+  }
+
+  toggleLosDebug() {
+    this.showLosDebug = !this.showLosDebug;
+    if (!this.showLosDebug && this.losDebugGfx) {
+      this.losDebugGfx.clear();
+    }
+  }
+
+  drawLosDebugRays() {
+    this.losDebugGfx.clear();
+    if (!this.showLosDebug || !this.player || this.player.isDead) {
+      return;
+    }
+
+    const lCfg = BALANCE.LOS;
+    const obstacles = this.roomManager.losObstacles;
+    const living = [];
+    for (let i = 0; i < this.activeEnemies.length; i++) {
+      const e = this.activeEnemies[i];
+      if (e && e.active && !e.isDead) {
+        const dx = e.x - this.player.x;
+        const dy = e.y - this.player.y;
+        living.push({ enemy: e, distSq: dx * dx + dy * dy });
+      }
+    }
+
+    living.sort((a, b) => a.distSq - b.distSq);
+    const count = Math.min(lCfg.DEBUG_NEAREST_COUNT, living.length);
+
+    for (let i = 0; i < count; i++) {
+      const rays = getVisibilityRays(
+        this.player.x,
+        this.player.y,
+        living[i].enemy,
+        obstacles
+      );
+      for (let r = 0; r < rays.length; r++) {
+        const ray = rays[r];
+        this.losDebugGfx.lineStyle(
+          lCfg.DEBUG_LINE_WIDTH,
+          ray.clear ? lCfg.DEBUG_CLEAR_COLOR : lCfg.DEBUG_BLOCKED_COLOR,
+          lCfg.DEBUG_ALPHA
+        );
+        this.losDebugGfx.lineBetween(ray.x1, ray.y1, ray.x2, ray.y2);
+      }
+    }
   }
 
   spawnSwingVisual(aimAngle, weapon, baseCfg) {
@@ -622,6 +713,10 @@ export class GameScene extends Phaser.Scene {
 
   spawnProjectile(x, y, aimAngle, weaponInstance) {
     this.projectilePool.acquire(x, y, aimAngle, weaponInstance);
+  }
+
+  spawnEnemyProjectile(x, y, angle, damage) {
+    this.enemyProjectilePool.acquire(x, y, angle, damage);
   }
 
   spawnProjectileImpactSpark(x, y) {
@@ -688,6 +783,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.activeEnemies.length = 0;
 
+    this.enemyProjectilePool.releaseAll((ep) => ep.deactivate());
     this.magnetizeAllActiveCoins();
     this.roomManager.openExitDoorImmediately();
   }
@@ -869,10 +965,17 @@ export class GameScene extends Phaser.Scene {
 
   onProjectileHitPlatform(objA, objB) {
     const proj = objA instanceof Projectile ? objA : objB;
-    if (!proj || !proj.active || proj.behavior === 'boomerang' || proj.hasStopped) {
+    if (!proj || !proj.active || proj.hasStopped) {
       return;
     }
+
     this.spawnProjectileImpactSpark(proj.x, proj.y);
+
+    if (proj.behavior === 'boomerang') {
+      proj.triggerReturnLeg();
+      return;
+    }
+
     proj.hasStopped = true;
     proj.setVisible(false);
     if (proj.body) {
@@ -892,8 +995,71 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    // Projectile hit requires a clear line between projectile center and enemy center
+    if (!hasLineOfSight(proj.x, proj.y, enemy.x, enemy.y, this.roomManager.losObstacles)) {
+      return;
+    }
+
     proj.registerEnemyHit(enemy);
     this.applyWeaponInstanceHit(enemy, proj.weaponInstance, proj.x, proj.y);
+  }
+
+  onEnemyProjectileHitPlatform(objA, objB) {
+    const ep = objA instanceof EnemyProjectile ? objA : objB;
+    if (!ep || !ep.active || ep.hasStopped) {
+      return;
+    }
+    this.spawnProjectileImpactSpark(ep.x, ep.y);
+    ep.hasStopped = true;
+    ep.setVisible(false);
+    if (ep.body) {
+      ep.body.stop();
+    }
+  }
+
+  onPlayerHitByEnemyProjectile(objA, objB) {
+    const ep = objA instanceof EnemyProjectile ? objA : objB;
+    if (
+      this.isGameOver ||
+      this.isCompareOpen ||
+      this.transitionPhase !== 'none' ||
+      !ep ||
+      !ep.active ||
+      ep.hasStopped
+    ) {
+      return;
+    }
+
+    if (
+      !hasLineOfSight(
+        ep.x,
+        ep.y,
+        this.player.x,
+        this.player.y,
+        this.roomManager.losObstacles
+      )
+    ) {
+      return;
+    }
+
+    this.spawnProjectileImpactSpark(ep.x, ep.y);
+    ep.hasStopped = true;
+    ep.setVisible(false);
+    if (ep.body) {
+      ep.body.stop();
+    }
+
+    const tookHit = this.player.takeDamage(ep.damage);
+    if (!tookHit) {
+      return;
+    }
+
+    if (this.player.isDead) {
+      this.audioManager.playPlayerDeath();
+      this.handlePlayerDeath();
+    } else {
+      this.audioManager.playPlayerHit();
+    }
   }
 
   applyWeaponInstanceHit(enemy, weaponInstance, sourceX, sourceY) {
@@ -1145,6 +1311,9 @@ export class GameScene extends Phaser.Scene {
     this.comparingPickup = null;
     this.transitionPhase = 'none';
     this.transitionOverlay.setVisible(false);
+    if (this.losDebugGfx) {
+      this.losDebugGfx.clear();
+    }
     this.physics.world.resume();
     this.touchControls.resetPointers();
 
@@ -1169,11 +1338,33 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  rollEnemyTypeForDepth(depth) {
+    const pool = BALANCE.SPAWNER.ENEMY_POOL;
+    let totalWeight = 0;
+    for (let i = 0; i < pool.length; i++) {
+      if (depth >= pool[i].minDepth) {
+        totalWeight += pool[i].weight;
+      }
+    }
+
+    let roll = Math.random() * totalWeight;
+    for (let i = 0; i < pool.length; i++) {
+      const entry = pool[i];
+      if (depth < entry.minDepth) {
+        continue;
+      }
+      roll -= entry.weight;
+      if (roll <= 0) {
+        return entry.type;
+      }
+    }
+    return 'slime';
+  }
+
   updateEnemySpawner(delta) {
     const s = BALANCE.SPAWNER;
     const rm = this.roomManager;
 
-    // Update active 0.5s warning markers
     for (let i = this.pendingWarnings.length - 1; i >= 0; i--) {
       const warning = this.pendingWarnings[i];
       warning.elapsed += delta;
@@ -1232,8 +1423,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.roomManager.enemiesToSpawn -= 1;
 
-    const s = BALANCE.SPAWNER;
-    const typeKey = Math.random() < s.SLIME_CHANCE ? 'slime' : 'bat';
+    const typeKey = this.rollEnemyTypeForDepth(this.currentDepth);
     const pos = this.pickSafeSpawnPosition(typeKey);
 
     const sprite = this.add.image(pos.x, pos.y, 'spawn_warning');
@@ -1251,6 +1441,8 @@ export class GameScene extends Phaser.Scene {
   pickSafeSpawnPosition(typeKey) {
     const s = BALANCE.SPAWNER;
     const surfaces = this.roomManager.spawnSurfaces;
+    const elevated = surfaces.filter((surf) => !surf.isGround);
+    const enemyCfg = ENEMIES[typeKey] || ENEMIES.slime;
     const minDistSq = s.MIN_PLAYER_DISTANCE * s.MIN_PLAYER_DISTANCE;
     let chosen = { x: s.FALLBACK_SPAWN_X, y: s.FALLBACK_SPAWN_Y };
 
@@ -1258,8 +1450,15 @@ export class GameScene extends Phaser.Scene {
       let x;
       let y;
 
-      if (typeKey === 'slime') {
-        const surface = surfaces[Phaser.Math.Between(0, surfaces.length - 1)];
+      if (typeKey === 'bat') {
+        x = Phaser.Math.Between(s.BAT_MIN_X, s.BAT_MAX_X);
+        y = Phaser.Math.Between(s.BAT_MIN_Y, s.BAT_MAX_Y);
+      } else {
+        // Archers prefer elevated platforms; Slimes & Chargers use any surface
+        const candidateSurfaces =
+          typeKey === 'archer' && elevated.length > 0 ? elevated : surfaces;
+        const surface =
+          candidateSurfaces[Phaser.Math.Between(0, candidateSurfaces.length - 1)];
         const minX = surface.isGround
           ? s.GROUND_MIN_SPAWN_X
           : surface.left + s.PLATFORM_EDGE_MARGIN;
@@ -1270,10 +1469,7 @@ export class GameScene extends Phaser.Scene {
           continue;
         }
         x = Phaser.Math.Between(Math.round(minX), Math.round(maxX));
-        y = surface.top - ENEMIES.slime.height / 2;
-      } else {
-        x = Phaser.Math.Between(s.BAT_MIN_X, s.BAT_MAX_X);
-        y = Phaser.Math.Between(s.BAT_MIN_Y, s.BAT_MAX_Y);
+        y = surface.top - enemyCfg.height / 2;
       }
 
       chosen = { x, y };
@@ -1293,12 +1489,12 @@ export class GameScene extends Phaser.Scene {
     }
 
     const enemy = new Enemy(this, x, y, typeKey, this.currentDepth);
-    if (typeKey === 'slime') {
-      this.slimeGroup.add(enemy);
-      enemy.body.setAllowGravity(true);
-    } else {
+    if (enemy.cfg.behavior === 'sine_fly') {
       this.batGroup.add(enemy);
       enemy.body.setAllowGravity(false);
+    } else {
+      this.groundEnemyGroup.add(enemy);
+      enemy.body.setAllowGravity(true);
     }
     enemy.setCollideWorldBounds(true);
     enemy.body.setSize(enemy.cfg.width, enemy.cfg.height);
@@ -1322,6 +1518,9 @@ export class GameScene extends Phaser.Scene {
     const bCfg = BALANCE.AFFIXES.BURN;
     const sTxtCfg = BALANCE.STATUS_TEXT;
     const chCfg = BALANCE.CHESTS;
+    const roomW = this.roomManager.roomWidth;
+    const roomH = this.roomManager.roomHeight;
+    const losObstacles = this.roomManager.losObstacles;
 
     this.coinPool.forEachActive((coin) => {
       const pickedUp = coin.updateCoin(delta, this.player);
@@ -1337,11 +1536,22 @@ export class GameScene extends Phaser.Scene {
       const shouldRelease = proj.updateProjectile(
         delta,
         this.player,
-        this.activeEnemies
+        this.activeEnemies,
+        roomW,
+        roomH,
+        losObstacles
       );
       if (shouldRelease) {
         proj.deactivate();
         this.projectilePool.release(proj);
+      }
+    });
+
+    this.enemyProjectilePool.forEachActive((ep) => {
+      const shouldRelease = ep.updateEnemyProjectile(delta, roomW, roomH);
+      if (shouldRelease) {
+        ep.deactivate();
+        this.enemyProjectilePool.release(ep);
       }
     });
 
@@ -1510,7 +1720,6 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    // Touch controls always stay active, including during fast room transitions
     this.touchControls.update();
     const inputState = this.readPlayerInput();
 
@@ -1532,16 +1741,26 @@ export class GameScene extends Phaser.Scene {
       if (Phaser.Input.Keyboard.JustDown(this.keys.n)) {
         this.debugClearRoom();
       }
+      if (Phaser.Input.Keyboard.JustDown(this.keys.l)) {
+        this.toggleLosDebug();
+      }
     }
 
+    const losObstacles = this.roomManager.losObstacles;
+    const platformBounds = this.roomManager.platformBounds;
+
     this.player.update(delta, inputState);
-    this.autoAttack.update(delta, this.activeEnemies);
+    this.autoAttack.update(delta, this.activeEnemies, losObstacles);
 
     this.updateEnemySpawner(delta);
 
-    const platformBounds = this.roomManager.platformBounds;
     for (let i = this.activeEnemies.length - 1; i >= 0; i--) {
-      this.activeEnemies[i].update(delta, this.player, platformBounds);
+      this.activeEnemies[i].update(
+        delta,
+        this.player,
+        platformBounds,
+        losObstacles
+      );
     }
 
     this.updateChests(delta);
@@ -1553,7 +1772,10 @@ export class GameScene extends Phaser.Scene {
       this.pendingWarnings.length
     );
 
-    // Check if player walked into the open exit door
+    if (this.showLosDebug) {
+      this.drawLosDebugRays();
+    }
+
     const rCfg = BALANCE.ROOMS;
     if (
       this.roomManager.isExitOpen &&
@@ -1563,4 +1785,8 @@ export class GameScene extends Phaser.Scene {
       this.startNextRoomTransition();
     }
   }
+}
+
+function gfxLine(gfx, x1, y1, x2, y2) {
+  gfx.lineBetween(x1, y1, x2, y2);
 }
